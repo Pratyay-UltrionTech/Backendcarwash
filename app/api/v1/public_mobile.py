@@ -240,10 +240,12 @@ def create_mobile_booking(body: MobileBookingCreate, db: DbSession, request: Req
         if code == "driver_busy":
             raise HTTPException(status_code=409, detail={"detail": "Driver is already assigned in this slot", "code": "driver_busy"})
         raise HTTPException(status_code=400, detail={"detail": "Invalid slot assignment", "code": "invalid_slot"})
+    # Store manager territory key (manager.city_pin_code), not the customer's requested service pin.
+    # All manager/washer queries filter on this field; service-area resolution is manager_for_service_pin(pin).
     row = MobileBooking(
         id=new_id(),
         manager_id=manager.id,
-        city_pin_code=pin,
+        city_pin_code=manager.city_pin_code,
         customer_name=body.customer_name,
         address=body.address,
         phone=body.phone,
@@ -269,8 +271,18 @@ def create_mobile_booking(body: MobileBookingCreate, db: DbSession, request: Req
         raise HTTPException(status_code=500, detail={"detail": "Database operation failed", "code": "db_error"})
     db.refresh(row)
     audit_log("customer_public", "anonymous", "create_mobile_booking", request, booking_id=row.id, city_pin_code=pin)
-    action_log("public_mobile_create_booking", "success", request, booking_id=row.id, city_pin_code=pin, latency_ms=round(monotonic_ms() - started, 2))
-    return _booking_to_dict(row)
+    action_log(
+        "public_mobile_create_booking",
+        "success",
+        request,
+        booking_id=row.id,
+        city_pin_code=manager.city_pin_code,
+        requested_pin=pin,
+        latency_ms=round(monotonic_ms() - started, 2),
+    )
+    out = _booking_to_dict(row)
+    out["requested_service_pin"] = pin
+    return out
 
 
 @router.get("/bookings/{booking_id}")
