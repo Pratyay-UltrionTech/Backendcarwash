@@ -965,7 +965,7 @@ def admin_patch_booking(
 ) -> dict[str, Any]:
     started = monotonic_ms()
     admin_id = str(_admin["sub"])
-    _branch_or_404(db, branch_id)
+    b = _branch_or_404(db, branch_id)
     job = (
         db.query(BranchBooking)
         .filter(BranchBooking.id == booking_id, BranchBooking.branch_id == branch_id)
@@ -976,20 +976,7 @@ def admin_patch_booking(
     data = body.model_dump(exclude_unset=True)
     prev_status = job.status
     try:
-        if "assigned_washer_id" in data:
-            booking_service.assign_washer(db, job, data["assigned_washer_id"])
-        if "bay_number" in data:
-            booking_service.set_bay(db, job, data["bay_number"])
-        if "status" in data and data["status"] is not None:
-            st = str(data["status"])
-            if st not in ("scheduled", "checked_in", "in_progress", "completed", "cancelled"):
-                raise HTTPException(
-                    status_code=400,
-                    detail={"detail": "Invalid status", "code": "invalid_status"},
-                )
-            job.status = st
-        if "notes" in data and data["notes"] is not None:
-            job.notes = data["notes"]
+        booking_service.patch_branch_booking_fields(db, b, job, data)
         loyalty_service.on_branch_booking_status_change(db, job, prev_status)
         db.commit()
         audit_log("admin", admin_id, "update_booking", request, branch_id=branch_id, booking_id=booking_id)

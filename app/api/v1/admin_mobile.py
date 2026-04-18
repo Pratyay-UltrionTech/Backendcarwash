@@ -844,6 +844,39 @@ def patch_booking(
         raise HTTPException(status_code=404, detail={"detail": "Booking not found", "code": "not_found"})
     data = body.model_dump(exclude_unset=True)
     prev_status = row.status
+    manager = db.query(MobileServiceManager).filter(MobileServiceManager.id == row.manager_id).one_or_none()
+    if not manager:
+        raise HTTPException(status_code=404, detail={"detail": "Mobile manager not found", "code": "not_found"})
+
+    if any(k in data for k in ("slot_date", "start_time", "end_time")):
+        sd = str(data.get("slot_date", row.slot_date))
+        st = str(data.get("start_time", row.start_time))
+        et = str(data.get("end_time", row.end_time))
+        try:
+            mobile_slot_service.assert_slot_available_for_booking_update(db, manager, sd, st, et, row.id)
+        except ValueError:
+            raise HTTPException(
+                status_code=409,
+                detail={"detail": "Selected slot is not available", "code": "slot_unavailable"},
+            )
+        row.slot_date = sd
+        row.start_time = st
+        row.end_time = et
+
+    if "customer_name" in data and data["customer_name"] is not None:
+        row.customer_name = str(data["customer_name"]).strip()
+    if "phone" in data and data["phone"] is not None:
+        row.phone = str(data["phone"]).strip()
+    if "address" in data and data["address"] is not None:
+        row.address = str(data["address"]).strip()
+    if "vehicle_type" in data and data["vehicle_type"] is not None:
+        row.vehicle_type = str(data["vehicle_type"]).strip()
+    if "vehicle_summary" in data and data["vehicle_summary"] is not None:
+        row.vehicle_summary = str(data["vehicle_summary"]).strip()
+    if "service_id" in data:
+        sid = data["service_id"]
+        row.service_id = sid.strip() if isinstance(sid, str) and sid.strip() else None
+
     if "assigned_driver_id" in data:
         driver_id = data["assigned_driver_id"]
         if driver_id is not None:
@@ -854,9 +887,6 @@ def patch_booking(
             )
             if not driver:
                 raise HTTPException(status_code=404, detail={"detail": "Driver not found", "code": "not_found"})
-            manager = db.query(MobileServiceManager).filter(MobileServiceManager.id == row.manager_id).one_or_none()
-            if not manager:
-                raise HTTPException(status_code=404, detail={"detail": "Mobile manager not found", "code": "not_found"})
             try:
                 mobile_slot_service.assert_driver_assignable(
                     db,

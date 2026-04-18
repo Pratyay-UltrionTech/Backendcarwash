@@ -167,6 +167,35 @@ def assert_slot_available(
         raise ValueError("slot_unavailable")
 
 
+def assert_slot_available_for_booking_update(
+    db: Session,
+    manager: MobileServiceManager,
+    slot_date: str,
+    start_time: str,
+    end_time: str,
+    exclude_booking_id: str,
+) -> None:
+    """Like ``assert_slot_available`` but excludes an existing booking (e.g. when rescheduling it)."""
+    rows = list_slot_availability(db, manager, slot_date)
+    row = next((r for r in rows if r.start_time == start_time and r.end_time == end_time), None)
+    if not row:
+        raise ValueError("slot_unavailable")
+    booked_excl = (
+        db.query(MobileBooking)
+        .filter(
+            MobileBooking.city_pin_code == manager.city_pin_code,
+            MobileBooking.slot_date == slot_date,
+            MobileBooking.start_time == start_time,
+            MobileBooking.end_time == end_time,
+            MobileBooking.status != "cancelled",
+            MobileBooking.id != exclude_booking_id,
+        )
+        .count()
+    )
+    if booked_excl >= row.capacity:
+        raise ValueError("slot_unavailable")
+
+
 def assert_driver_assignable(
     db: Session,
     manager: MobileServiceManager,

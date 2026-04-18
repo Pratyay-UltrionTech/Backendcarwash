@@ -157,3 +157,12 @@ class MobileBookingUpdate(BaseModel):
     status: str | None = None
     notes: str | None = None
     tip_cents: int | None = None
+    customer_name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    vehicle_type: str | None = None
+    vehicle_summary: str | None = None
+    service_id: str | None = None
+    slot_date: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None

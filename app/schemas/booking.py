@@ -20,6 +20,16 @@ class BookingUpdate(BaseModel):
     assigned_washer_id: str | None = None
     bay_number: int | None = None
     notes: str | None = None
+    customer_name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    vehicle_type: str | None = None
+    service_summary: str | None = None
+    service_id: str | None = None
+    slot_date: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    tip_cents: int | None = Field(default=None, ge=0, le=50_000)
 
 
 class BookingOut(BaseModel):
