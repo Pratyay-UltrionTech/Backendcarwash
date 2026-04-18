@@ -25,6 +25,8 @@ def _booking_to_dict(b: MobileBooking) -> dict[str, Any]:
         "address": b.address,
         "phone": b.phone,
         "vehicle_summary": b.vehicle_summary,
+        # Align with branch booking payloads / washer UI field name
+        "service_summary": b.vehicle_summary,
         "service_id": b.service_id,
         "vehicle_type": b.vehicle_type,
         "selected_addon_ids": loads_json_array(b.selected_addon_ids_json),
@@ -181,8 +183,7 @@ def accept_job(booking_id: str, db: DbSession, washer: MobileWasherUser, request
             raise HTTPException(status_code=409, detail={"detail": "Selected slot is not available", "code": "slot_unavailable"})
         raise HTTPException(status_code=400, detail={"detail": "Invalid driver assignment", "code": "invalid_slot"})
     row.assigned_driver_id = driver_id
-    if row.status == "scheduled":
-        row.status = "checked_in"
+    # Keep status as scheduled so the driver can explicitly "Mark arrived" in the app after accepting.
     try:
         db.commit()
     except SQLAlchemyError:

@@ -19,7 +19,9 @@ class WasherLoginRequest(BaseModel):
 
 
 class MobileManagerLoginRequest(BaseModel):
-    city_pin_code: str
+    """city_pin_code: optional. When blank, login_id + password must match exactly one active mobile manager."""
+
+    city_pin_code: str = ""
     login_id: str
     password: str
 
@@ -35,6 +37,14 @@ class MobileWasherLoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class MobileManagerTokenResponse(TokenResponse):
+    """City PIN for the session (same as in JWT); profile fields for the admin portal session banner."""
+
+    city_pin_code: str = ""
+    emp_name: str = ""
+    zip_code: str = ""
 
 
 class MobileWasherTokenResponse(TokenResponse):

@@ -9,6 +9,7 @@ from app.schemas.auth import (
     AdminLoginRequest,
     ManagerLoginRequest,
     MobileManagerLoginRequest,
+    MobileManagerTokenResponse,
     MobileWasherLoginRequest,
     MobileWasherTokenResponse,
     TokenResponse,
@@ -117,31 +118,71 @@ def washer_login(body: WasherLoginRequest, db: DbSession) -> TokenResponse:
     return TokenResponse(access_token=token)
 
 
-@router.post("/mobile/manager/login", response_model=TokenResponse)
-def mobile_manager_login(body: MobileManagerLoginRequest, db: DbSession) -> TokenResponse:
+@router.post("/mobile/manager/login", response_model=MobileManagerTokenResponse)
+def mobile_manager_login(body: MobileManagerLoginRequest, db: DbSession) -> MobileManagerTokenResponse:
     pin = normalize_mobile_city_pin(body.city_pin_code)
     login_id = str(body.login_id or "").strip()
-    if len(pin) != 6:
+    if not login_id:
         raise HTTPException(
             status_code=400,
-            detail={"detail": "Enter a valid 6-digit city PIN", "code": "invalid_pin_code"},
+            detail={"detail": "login_id is required", "code": "validation_error"},
         )
-    mgr = (
-        db.query(MobileServiceManager)
-        .filter(
-            MobileServiceManager.city_pin_code == pin,
-            MobileServiceManager.login_id == login_id,
-            MobileServiceManager.active.is_(True),
-        )
-        .one_or_none()
-    )
-    if not mgr or not verify_password(body.password, mgr.password_hash):
+    if pin and len(pin) != 6:
         raise HTTPException(
-            status_code=401,
-            detail={"detail": "Invalid mobile manager credentials", "code": "invalid_credentials"},
+            status_code=400,
+            detail={
+                "detail": "Enter a valid 6-digit city PIN, or leave it blank to sign in with login ID and password only.",
+                "code": "invalid_pin_code",
+            },
         )
+
+    mgr: MobileServiceManager | None = None
+
+    if len(pin) == 6:
+        mgr = (
+            db.query(MobileServiceManager)
+            .filter(
+                MobileServiceManager.city_pin_code == pin,
+                MobileServiceManager.login_id == login_id,
+                MobileServiceManager.active.is_(True),
+            )
+            .one_or_none()
+        )
+        if not mgr or not verify_password(body.password, mgr.password_hash):
+            raise HTTPException(
+                status_code=401,
+                detail={"detail": "Invalid mobile manager credentials", "code": "invalid_credentials"},
+            )
+    else:
+        candidates = (
+            db.query(MobileServiceManager)
+            .filter(MobileServiceManager.login_id == login_id, MobileServiceManager.active.is_(True))
+            .all()
+        )
+        matches = [m for m in candidates if verify_password(body.password, m.password_hash)]
+        if len(matches) == 1:
+            mgr = matches[0]
+        elif len(matches) > 1:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "detail": "More than one mobile manager uses this login ID; ask admin to use a unique login per manager or sign in with the 6-digit city PIN included.",
+                    "code": "invalid_credentials",
+                },
+            )
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail={"detail": "Invalid mobile manager credentials", "code": "invalid_credentials"},
+            )
+
     token = create_access_token({"role": "mobile_manager", "sub": mgr.id, "city_pin_code": mgr.city_pin_code})
-    return TokenResponse(access_token=token)
+    return MobileManagerTokenResponse(
+        access_token=token,
+        city_pin_code=str(mgr.city_pin_code or ""),
+        emp_name=str(mgr.emp_name or "").strip(),
+        zip_code=str(mgr.zip_code or "").strip(),
+    )
 
 
 @router.post("/mobile/washer/login", response_model=MobileWasherTokenResponse)
