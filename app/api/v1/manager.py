@@ -75,11 +75,16 @@ def create_walk_in(db: DbSession, manager: ManagerUser, body: BookingCreate, req
             vehicle_type=body.vehicle_type,
             service_summary=body.service_summary,
             service_id=body.service_id,
+            selected_addon_ids=body.selected_addon_ids,
             slot_date=body.slot_date,
             start_time=body.start_time,
             end_time=body.end_time,
             source="walk_in",
             tip_cents=body.tip_cents,
+            notes=body.notes,
+            bay_number=body.bay_number,
+            assigned_washer_id=body.assigned_washer_id,
+            booking_id=body.booking_id,
         )
         db.commit()
         audit_log(

@@ -1,10 +1,42 @@
 from __future__ import annotations
 
+import uuid
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, ConflictError, NotFoundError
-from app.models import Branch, BranchBooking, BranchSlotSettings, Washer
+from app.models import Branch, BranchBooking, CatalogServiceItem, VehicleCatalogBlock, Washer
 from app.services import slot_service
+from app.services.duration_slots import snap_duration_to_base_slots
+from app.services.jsonutil import dumps_json
+
+
+def resolve_branch_booking_duration_minutes(
+    db: Session, branch_id: str, service_id: str | None, addon_ids: list[str] | None
+) -> int:
+    from app.services.duration_slots import total_minutes_for_service_and_addons
+
+    n_addons = len(addon_ids or [])
+    if not service_id:
+        return total_minutes_for_service_and_addons(60, n_addons)
+    row = (
+        db.query(CatalogServiceItem)
+        .join(VehicleCatalogBlock, CatalogServiceItem.vehicle_block_id == VehicleCatalogBlock.id)
+        .filter(VehicleCatalogBlock.branch_id == branch_id, CatalogServiceItem.id == service_id)
+        .one_or_none()
+    )
+    if not row:
+        return total_minutes_for_service_and_addons(60, n_addons)
+    return total_minutes_for_service_and_addons(int(row.duration_minutes or 60), n_addons)
+
+
+def _intervals_overlap_booking(
+    start_a: str, end_a: str, start_b: str, end_b: str
+) -> bool:
+    a0, a1 = slot_service.booking_span_minutes(start_a, end_a)
+    b0, b1 = slot_service.booking_span_minutes(start_b, end_b)
+    return slot_service.intervals_overlap_minutes(a0, a1, b0, b1)
 
 
 def washer_ids_busy_in_slot(
@@ -18,23 +50,37 @@ def washer_ids_busy_in_slot(
     q = db.query(BranchBooking).filter(
         BranchBooking.branch_id == branch_id,
         BranchBooking.slot_date == slot_date,
-        BranchBooking.start_time == start_time,
-        BranchBooking.end_time == end_time,
         BranchBooking.status != "cancelled",
         BranchBooking.assigned_washer_id.isnot(None),
     )
     if exclude_booking_id:
         q = q.filter(BranchBooking.id != exclude_booking_id)
-    return {str(b.assigned_washer_id) for b in q.all() if b.assigned_washer_id}
+    busy: set[str] = set()
+    for b in q.all():
+        if not b.assigned_washer_id:
+            continue
+        if _intervals_overlap_booking(start_time, end_time, b.start_time, b.end_time):
+            busy.add(str(b.assigned_washer_id))
+    return busy
 
 
 def assert_slot_available(
     db: Session, branch: Branch, slot_date: str, start_time: str, end_time: str
 ) -> None:
-    slots = slot_service.list_available_slots(db, branch, slot_date)
-    slot = next((s for s in slots if s["startTime"] == start_time and s["endTime"] == end_time), None)
-    if not slot or slot["available"] <= 0:
-        raise ConflictError("Selected slot is not available", code="slot_unavailable")
+    s0, s1 = slot_service.booking_span_minutes(start_time, end_time)
+    dur = snap_duration_to_base_slots(s1 - s0)
+    slot_service.assert_start_duration_bookable(db, branch, slot_date, start_time, dur)
+
+
+def _parse_client_booking_id(raw: str | None) -> str:
+    if not raw or not str(raw).strip():
+        return str(uuid.uuid4())
+    s = str(raw).strip()
+    try:
+        uuid.UUID(s)
+    except ValueError as e:
+        raise AppError("Invalid booking id", code="validation_error", status_code=400) from e
+    return s
 
 
 def create_booking(
@@ -47,17 +93,44 @@ def create_booking(
     vehicle_type: str,
     service_summary: str,
     service_id: str | None = None,
+    selected_addon_ids: list[str] | None = None,
     slot_date: str,
     start_time: str,
-    end_time: str,
+    end_time: str | None = None,
     source: str,
     bay_number: int | None = None,
     notes: str = "",
     tip_cents: int = 0,
+    assigned_washer_id: str | None = None,
+    booking_id: str | None = None,
 ) -> BranchBooking:
-    assert_slot_available(db, branch, slot_date, start_time, end_time)
+    addons = list(selected_addon_ids or [])
+    if end_time:
+        s0, s1 = slot_service.booking_span_minutes(start_time, end_time)
+        dur = snap_duration_to_base_slots(s1 - s0)
+        et = end_time
+    else:
+        dur = resolve_branch_booking_duration_minutes(db, branch.id, service_id, addons)
+        et = slot_service.add_minutes_to_hhmm(start_time, dur)
+
+    if bay_number is not None:
+        if bay_number < 1 or bay_number > branch.bay_count:
+            raise AppError("Bay number out of range", code="invalid_bay", status_code=400)
+        if not slot_service.is_bay_available_for_interval(
+            db, branch, slot_date, start_time, et, bay_number, exclude_booking_id=None
+        ):
+            raise ConflictError("Selected slot is not available", code="slot_unavailable")
+        bay = bay_number
+    else:
+        bay = slot_service.allocate_bay_for_interval(db, branch, slot_date, start_time, et)
+        if bay is None:
+            raise ConflictError("Selected slot is not available", code="slot_unavailable")
+
     tip = max(0, int(tip_cents or 0))
+    bid = _parse_client_booking_id(booking_id)
+
     job = BranchBooking(
+        id=bid,
         branch_id=branch.id,
         customer_name=customer_name,
         phone=phone,
@@ -65,10 +138,11 @@ def create_booking(
         vehicle_type=vehicle_type,
         service_summary=service_summary,
         service_id=(service_id.strip() if isinstance(service_id, str) and service_id.strip() else None),
+        selected_addon_ids_json=dumps_json(addons),
         slot_date=slot_date,
         start_time=start_time,
-        end_time=end_time,
-        bay_number=bay_number,
+        end_time=et,
+        bay_number=bay,
         assigned_washer_id=None,
         status="scheduled",
         source=source,
@@ -77,6 +151,8 @@ def create_booking(
     )
     db.add(job)
     db.flush()
+    if assigned_washer_id:
+        assign_washer(db, job, assigned_washer_id.strip() if isinstance(assigned_washer_id, str) else None)
     return job
 
 
@@ -120,25 +196,46 @@ def set_bay(db: Session, booking: BranchBooking, bay_number: int | None) -> Bran
     return booking
 
 
-def count_bookings_in_branch_slot(
+def assert_branch_bay_interval_free(
     db: Session,
     branch_id: str,
     slot_date: str,
     start_time: str,
     end_time: str,
-    *,
-    exclude_booking_id: str | None = None,
-) -> int:
-    q = db.query(BranchBooking).filter(
-        BranchBooking.branch_id == branch_id,
-        BranchBooking.slot_date == slot_date,
-        BranchBooking.start_time == start_time,
-        BranchBooking.end_time == end_time,
-        BranchBooking.status != "cancelled",
+    bay_number: int,
+    exclude_booking_id: str | None,
+) -> None:
+    q = (
+        db.query(BranchBooking)
+        .filter(
+            BranchBooking.branch_id == branch_id,
+            BranchBooking.slot_date == slot_date,
+            BranchBooking.status != "cancelled",
+            BranchBooking.bay_number == bay_number,
+        )
+        .all()
     )
     if exclude_booking_id:
-        q = q.filter(BranchBooking.id != exclude_booking_id)
-    return int(q.count())
+        q = [b for b in q if b.id != exclude_booking_id]
+    for other in q:
+        if _intervals_overlap_booking(start_time, end_time, other.start_time, other.end_time):
+            raise ConflictError("That bay is already assigned for this time window", code="bay_unavailable")
+    # Bookings with null bay still overlap everyone on time overlap
+    floating = (
+        db.query(BranchBooking)
+        .filter(
+            BranchBooking.branch_id == branch_id,
+            BranchBooking.slot_date == slot_date,
+            BranchBooking.status != "cancelled",
+            BranchBooking.bay_number.is_(None),
+        )
+        .all()
+    )
+    if exclude_booking_id:
+        floating = [b for b in floating if b.id != exclude_booking_id]
+    for other in floating:
+        if _intervals_overlap_booking(start_time, end_time, other.start_time, other.end_time):
+            raise ConflictError("That bay is already assigned for this time window", code="bay_unavailable")
 
 
 def assert_branch_slot_has_capacity_after_update(
@@ -150,16 +247,12 @@ def assert_branch_slot_has_capacity_after_update(
     *,
     exclude_booking_id: str,
 ) -> None:
-    settings_row = (
-        db.query(BranchSlotSettings).filter(BranchSlotSettings.branch_id == branch.id).one_or_none()
+    s0, s1 = slot_service.booking_span_minutes(start_time, end_time)
+    dur = snap_duration_to_base_slots(s1 - s0)
+    bay = slot_service.allocate_bay_for_interval(
+        db, branch, slot_date, start_time, end_time, exclude_booking_id=exclude_booking_id
     )
-    capacity = slot_service.get_open_bays_for_slot(settings_row, slot_date, start_time, end_time, branch.bay_count)
-    if capacity <= 0:
-        raise ConflictError("That bay or window is closed for this date", code="slot_unavailable")
-    booked = count_bookings_in_branch_slot(
-        db, branch.id, slot_date, start_time, end_time, exclude_booking_id=exclude_booking_id
-    )
-    if booked >= capacity:
+    if bay is None:
         raise ConflictError("Selected slot is not available", code="slot_unavailable")
 
 
@@ -172,21 +265,9 @@ def assert_branch_bay_free_excluding(
     bay_number: int,
     exclude_booking_id: str,
 ) -> None:
-    other = (
-        db.query(BranchBooking)
-        .filter(
-            BranchBooking.branch_id == branch_id,
-            BranchBooking.slot_date == slot_date,
-            BranchBooking.start_time == start_time,
-            BranchBooking.end_time == end_time,
-            BranchBooking.bay_number == bay_number,
-            BranchBooking.status != "cancelled",
-            BranchBooking.id != exclude_booking_id,
-        )
-        .first()
+    assert_branch_bay_interval_free(
+        db, branch_id, slot_date, start_time, end_time, bay_number, exclude_booking_id=exclude_booking_id
     )
-    if other:
-        raise ConflictError("That bay is already assigned for this time window", code="bay_unavailable")
 
 
 def patch_branch_booking_fields(db: Session, branch: Branch, job: BranchBooking, data: dict[str, Any]) -> None:
@@ -221,6 +302,8 @@ def patch_branch_booking_fields(db: Session, branch: Branch, job: BranchBooking,
     if "service_id" in data:
         sid = data["service_id"]
         job.service_id = sid.strip() if isinstance(sid, str) and sid.strip() else None
+    if "selected_addon_ids" in data and data["selected_addon_ids"] is not None:
+        job.selected_addon_ids_json = dumps_json(list(data["selected_addon_ids"]))
     if "tip_cents" in data and data["tip_cents"] is not None:
         job.tip_cents = max(0, int(data["tip_cents"]))
 

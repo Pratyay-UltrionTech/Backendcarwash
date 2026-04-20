@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.api.deps import DbSession
 from app.config import get_settings
-from app.core.mobile_pins import normalize_mobile_city_pin
+from app.core.mobile_pins import is_valid_mobile_city_pin, normalize_mobile_city_pin
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models import BranchManager, CustomerUser, MobileServiceDriver, MobileServiceManager, Washer
 from app.schemas.auth import (
@@ -127,18 +127,18 @@ def mobile_manager_login(body: MobileManagerLoginRequest, db: DbSession) -> Mobi
             status_code=400,
             detail={"detail": "login_id is required", "code": "validation_error"},
         )
-    if pin and len(pin) != 6:
+    if pin and not is_valid_mobile_city_pin(pin):
         raise HTTPException(
             status_code=400,
             detail={
-                "detail": "Enter a valid 6-digit city PIN, or leave it blank to sign in with login ID and password only.",
+                "detail": "Enter a valid 4–6 digit city PIN, or leave it blank to sign in with login ID and password only.",
                 "code": "invalid_pin_code",
             },
         )
 
     mgr: MobileServiceManager | None = None
 
-    if len(pin) == 6:
+    if is_valid_mobile_city_pin(pin):
         mgr = (
             db.query(MobileServiceManager)
             .filter(
@@ -166,7 +166,7 @@ def mobile_manager_login(body: MobileManagerLoginRequest, db: DbSession) -> Mobi
             raise HTTPException(
                 status_code=401,
                 detail={
-                    "detail": "More than one mobile manager uses this login ID; ask admin to use a unique login per manager or sign in with the 6-digit city PIN included.",
+                    "detail": "More than one mobile manager uses this login ID; ask admin to use a unique login per manager or sign in with the city PIN included.",
                     "code": "invalid_credentials",
                 },
             )

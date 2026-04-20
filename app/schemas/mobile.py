@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class MobileManagerCreate(BaseModel):
@@ -64,6 +64,15 @@ class MobileServiceItemIn(BaseModel):
     recommended: bool = False
     description_points: list[str] = Field(default_factory=list)
     active: bool = True
+    catalog_group_id: str | None = None
+    duration_minutes: int = Field(default=60, ge=30)
+
+    @field_validator("duration_minutes")
+    @classmethod
+    def _snap_duration(cls, v: int) -> int:
+        from app.services.duration_slots import snap_duration_to_base_slots
+
+        return snap_duration_to_base_slots(v)
 
 
 class MobileAddonItemIn(BaseModel):
@@ -145,11 +154,12 @@ class MobileBookingCreate(BaseModel):
     selected_addon_ids: list[str] = Field(default_factory=list)
     slot_date: str
     start_time: str
-    end_time: str
+    end_time: str | None = None
     source: str = "online"
     notes: str = ""
     tip_cents: int = 0
     assigned_driver_id: str | None = None
+    booking_id: str | None = None
 
 
 class MobileBookingUpdate(BaseModel):
@@ -163,6 +173,7 @@ class MobileBookingUpdate(BaseModel):
     vehicle_type: str | None = None
     vehicle_summary: str | None = None
     service_id: str | None = None
+    selected_addon_ids: list[str] | None = None
     slot_date: str | None = None
     start_time: str | None = None
     end_time: str | None = None

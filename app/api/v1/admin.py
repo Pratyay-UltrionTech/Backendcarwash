@@ -371,6 +371,8 @@ def create_vehicle_block(
                 recommended=s.recommended,
                 description_points=dumps_json(s.description_points),
                 active=s.active,
+                catalog_group_id=s.catalog_group_id,
+                duration_minutes=s.duration_minutes,
             )
         )
     for a in body.addons:
@@ -427,6 +429,8 @@ def replace_vehicle_block(
                 recommended=s.recommended,
                 description_points=dumps_json(s.description_points),
                 active=s.active,
+                catalog_group_id=s.catalog_group_id,
+                duration_minutes=s.duration_minutes,
             )
         )
     for a in body.addons:
@@ -1021,11 +1025,16 @@ def admin_create_booking(
             vehicle_type=body.vehicle_type,
             service_summary=body.service_summary,
             service_id=body.service_id,
+            selected_addon_ids=body.selected_addon_ids,
             slot_date=body.slot_date,
             start_time=body.start_time,
             end_time=body.end_time,
             source=body.source,
             tip_cents=body.tip_cents,
+            notes=body.notes,
+            bay_number=body.bay_number,
+            assigned_washer_id=body.assigned_washer_id,
+            booking_id=body.booking_id,
         )
         db.commit()
         audit_log("admin", admin_id, "create_booking", request, branch_id=branch_id, booking_id=job.id)

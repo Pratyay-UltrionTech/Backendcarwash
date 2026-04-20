@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -11,9 +12,15 @@ from app.api.deps import DbSession, MobileManagerUser
 from app.core.observability import action_log, audit_log, monotonic_ms
 from app.models import MobileBooking, MobileServiceDriver, MobileServiceManager, MobileSlotSettings
 from app.models.base import new_id
-from app.schemas.mobile import MobileBookingCreate, MobileBookingUpdate, MobileSlotSettingsPatch
+from app.schemas.mobile import (
+    MobileBookingCreate,
+    MobileBookingUpdate,
+    MobileSlotSettingsPatch,
+)
 from app.services.jsonutil import dumps_json, loads_json_array, loads_json_object
 from app.services import loyalty_service, mobile_slot_service
+from app.services.duration_slots import snap_duration_to_base_slots
+from app.services.slot_service import add_minutes_to_hhmm
 
 router = APIRouter(prefix="/manager/mobile", tags=["manager-mobile"])
 
@@ -30,6 +37,8 @@ def _driver_to_dict(d: MobileServiceDriver) -> dict[str, Any]:
 
 
 def _booking_to_dict(b: MobileBooking) -> dict[str, Any]:
+    s0, s1 = mobile_slot_service.booking_span_minutes(b.start_time, b.end_time)
+    duration_minutes = snap_duration_to_base_slots(s1 - s0)
     return {
         "id": b.id,
         "city_pin_code": b.city_pin_code,
@@ -40,6 +49,7 @@ def _booking_to_dict(b: MobileBooking) -> dict[str, Any]:
         "service_id": b.service_id,
         "vehicle_type": b.vehicle_type,
         "selected_addon_ids": loads_json_array(b.selected_addon_ids_json),
+        "duration_minutes": duration_minutes,
         "slot_date": b.slot_date,
         "start_time": b.start_time,
         "end_time": b.end_time,
@@ -88,6 +98,17 @@ def list_drivers(db: DbSession, manager: MobileManagerUser, request: Request) ->
     return [_driver_to_dict(r) for r in rows]
 
 
+def _parse_mobile_booking_id(raw: str | None) -> str:
+    if not raw or not str(raw).strip():
+        return new_id()
+    s = str(raw).strip()
+    try:
+        uuid.UUID(s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail={"detail": "Invalid booking id", "code": "validation_error"})
+    return s
+
+
 @router.get("/bookings")
 def list_bookings(db: DbSession, manager: MobileManagerUser, request: Request) -> list[dict[str, Any]]:
     started = monotonic_ms()
@@ -112,17 +133,26 @@ def create_booking(
     manager_row = db.query(MobileServiceManager).filter(MobileServiceManager.id == manager_id).one_or_none()
     if not manager_row:
         raise HTTPException(status_code=404, detail={"detail": "Mobile manager not found", "code": "not_found"})
+    dur_m = mobile_slot_service.resolve_mobile_booking_duration_minutes(db, body.service_id, body.selected_addon_ids)
+    end_time = body.end_time or add_minutes_to_hhmm(body.start_time, dur_m)
+    assigned_driver_id = body.assigned_driver_id
     try:
-        mobile_slot_service.assert_slot_available(db, manager_row, body.slot_date, body.start_time, body.end_time)
-        if body.assigned_driver_id:
+        mobile_slot_service.assert_slot_available(db, manager_row, body.slot_date, body.start_time, end_time)
+        if assigned_driver_id:
             mobile_slot_service.assert_driver_assignable(
                 db,
                 manager_row,
                 body.slot_date,
                 body.start_time,
-                body.end_time,
-                body.assigned_driver_id,
+                end_time,
+                assigned_driver_id,
             )
+        else:
+            assigned_driver_id = mobile_slot_service.allocate_driver_for_interval(
+                db, manager_row, body.slot_date, body.start_time, end_time
+            )
+            if assigned_driver_id is None:
+                raise ValueError("slot_unavailable")
     except ValueError as e:
         code = str(e)
         if code == "slot_unavailable":
@@ -132,8 +162,10 @@ def create_booking(
         if code == "driver_busy":
             raise HTTPException(status_code=409, detail={"detail": "Driver is already assigned in this slot", "code": "driver_busy"})
         raise HTTPException(status_code=400, detail={"detail": "Invalid slot assignment", "code": "invalid_slot"})
+    bid = _parse_mobile_booking_id(body.booking_id)
+
     row = MobileBooking(
-        id=new_id(),
+        id=bid,
         manager_id=manager_id,
         city_pin_code=city_pin_code,
         customer_name=body.customer_name,
@@ -145,8 +177,8 @@ def create_booking(
         selected_addon_ids_json=dumps_json(body.selected_addon_ids),
         slot_date=body.slot_date,
         start_time=body.start_time,
-        end_time=body.end_time,
-        assigned_driver_id=body.assigned_driver_id,
+        end_time=end_time,
+        assigned_driver_id=assigned_driver_id,
         status="scheduled",
         source=body.source,
         notes=body.notes,
@@ -221,6 +253,8 @@ def patch_booking(
     if "service_id" in data:
         sid = data["service_id"]
         row.service_id = sid.strip() if isinstance(sid, str) and sid.strip() else None
+    if "selected_addon_ids" in data and data["selected_addon_ids"] is not None:
+        row.selected_addon_ids_json = dumps_json(list(data["selected_addon_ids"]))
 
     if "assigned_driver_id" in data:
         driver_id = data["assigned_driver_id"]

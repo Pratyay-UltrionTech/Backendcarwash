@@ -23,7 +23,7 @@ from app.models import (
     MobileSlotSettings,
     MobileVehicleCatalogBlock,
 )
-from app.core.mobile_pins import normalize_mobile_city_pin
+from app.core.mobile_pins import is_valid_mobile_city_pin, normalize_mobile_city_pin
 from app.models.base import new_id
 from app.schemas.mobile import (
     MobileBookingUpdate,
@@ -92,6 +92,8 @@ def _service_to_dict(s: MobileCatalogServiceItem) -> dict[str, Any]:
         "recommended": s.recommended,
         "description_points": loads_json_array(s.description_points),
         "active": s.active,
+        "catalog_group_id": getattr(s, "catalog_group_id", None),
+        "duration_minutes": int(getattr(s, "duration_minutes", 60) or 60),
     }
 
 
@@ -229,7 +231,7 @@ def create_manager(body: MobileManagerCreate, db: DbSession, _admin: AdminUser, 
     started = monotonic_ms()
     admin_id = str(_admin["sub"])
     city_pin_code = normalize_mobile_city_pin(body.city_pin_code)
-    if len(city_pin_code) != 6:
+    if not is_valid_mobile_city_pin(city_pin_code):
         raise HTTPException(status_code=400, detail={"detail": "Invalid city pin code", "code": "invalid_pin_code"})
     row = MobileServiceManager(
         city_pin_code=city_pin_code,
@@ -323,9 +325,11 @@ def create_driver(body: MobileDriverCreate, db: DbSession, _admin: AdminUser, re
     started = monotonic_ms()
     admin_id = str(_admin["sub"])
     city_pin_code = normalize_mobile_city_pin(body.city_pin_code)
-    if len(city_pin_code) != 6:
+    if not is_valid_mobile_city_pin(city_pin_code):
         raise HTTPException(status_code=400, detail={"detail": "Invalid city pin code", "code": "invalid_pin_code"})
     service_pin_code = normalize_mobile_city_pin(body.service_pin_code or body.city_pin_code) or city_pin_code
+    if not is_valid_mobile_city_pin(service_pin_code):
+        raise HTTPException(status_code=400, detail={"detail": "Invalid service pin code", "code": "invalid_pin_code"})
     manager = db.query(MobileServiceManager).filter(MobileServiceManager.city_pin_code == city_pin_code).one_or_none()
     if not manager:
         raise HTTPException(status_code=404, detail={"detail": "Mobile manager not found for city pin", "code": "not_found"})
@@ -377,7 +381,10 @@ def update_driver(
     if "login_id" in data and data["login_id"] is not None:
         row.login_id = str(data["login_id"]).strip()
     if "service_pin_code" in data and data["service_pin_code"] is not None:
-        row.service_pin_code = normalize_mobile_city_pin(str(data["service_pin_code"])) or row.service_pin_code
+        next_svc = normalize_mobile_city_pin(str(data["service_pin_code"])) or row.service_pin_code
+        if not is_valid_mobile_city_pin(next_svc):
+            raise HTTPException(status_code=400, detail={"detail": "Invalid service pin code", "code": "invalid_pin_code"})
+        row.service_pin_code = next_svc
     if "serviceable_zip_codes" in data and data["serviceable_zip_codes"] is not None:
         row.serviceable_zip_codes_json = dumps_json([_pin(z) for z in data["serviceable_zip_codes"] if _pin(z)])
     if "password" in data and data["password"]:
@@ -483,6 +490,8 @@ def create_vehicle_block(
                 recommended=s.recommended,
                 description_points=dumps_json(s.description_points),
                 active=s.active,
+                catalog_group_id=s.catalog_group_id,
+                duration_minutes=s.duration_minutes,
             )
         )
     try:
@@ -526,6 +535,8 @@ def replace_vehicle_block(
                 recommended=s.recommended,
                 description_points=dumps_json(s.description_points),
                 active=s.active,
+                catalog_group_id=s.catalog_group_id,
+                duration_minutes=s.duration_minutes,
             )
         )
     try:

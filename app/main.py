@@ -50,6 +50,20 @@ def _ensure_catalog_service_recommended_column() -> None:
     _log.info("Applied schema patch: catalog_service_items.recommended")
 
 
+def _ensure_branch_booking_selected_addon_ids_column() -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("branch_bookings"):
+        return
+    cols = {c["name"] for c in insp.get_columns("branch_bookings")}
+    if "selected_addon_ids_json" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE branch_bookings ADD COLUMN selected_addon_ids_json TEXT NOT NULL DEFAULT '[]'"))
+    _log.info("Applied schema patch: branch_bookings.selected_addon_ids_json")
+
+
 def _ensure_loyalty_ledger_and_booking_columns() -> None:
     """Loyalty ledger table + booking columns for service_id / completion time."""
     from sqlalchemy import inspect, text
@@ -92,6 +106,65 @@ def _ensure_mobile_catalog_service_recommended_column() -> None:
     _log.info("Applied schema patch: mobile_catalog_service_items.recommended")
 
 
+def _ensure_catalog_service_catalog_group_id_column() -> None:
+    """Add catalog_group_id for service-centric multi-vehicle rows."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("catalog_service_items"):
+        return
+    cols = {c["name"] for c in insp.get_columns("catalog_service_items")}
+    if "catalog_group_id" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE catalog_service_items ADD COLUMN catalog_group_id VARCHAR(36) NULL"))
+    _log.info("Applied schema patch: catalog_service_items.catalog_group_id")
+
+
+def _ensure_mobile_catalog_service_catalog_group_id_column() -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("mobile_catalog_service_items"):
+        return
+    cols = {c["name"] for c in insp.get_columns("mobile_catalog_service_items")}
+    if "catalog_group_id" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE mobile_catalog_service_items ADD COLUMN catalog_group_id VARCHAR(36) NULL"))
+    _log.info("Applied schema patch: mobile_catalog_service_items.catalog_group_id")
+
+
+def _ensure_catalog_service_duration_minutes_column() -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("catalog_service_items"):
+        return
+    cols = {c["name"] for c in insp.get_columns("catalog_service_items")}
+    if "duration_minutes" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE catalog_service_items ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 60"))
+    _log.info("Applied schema patch: catalog_service_items.duration_minutes")
+
+
+def _ensure_mobile_catalog_service_duration_minutes_column() -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("mobile_catalog_service_items"):
+        return
+    cols = {c["name"] for c in insp.get_columns("mobile_catalog_service_items")}
+    if "duration_minutes" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE mobile_catalog_service_items ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 60")
+        )
+    _log.info("Applied schema patch: mobile_catalog_service_items.duration_minutes")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     import app.models  # noqa: F401 — register ORM mappers
@@ -101,9 +174,14 @@ async def lifespan(_app: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
         _ensure_tip_cents_column()
+        _ensure_branch_booking_selected_addon_ids_column()
         _ensure_loyalty_ledger_and_booking_columns()
         _ensure_catalog_service_recommended_column()
         _ensure_mobile_catalog_service_recommended_column()
+        _ensure_catalog_service_catalog_group_id_column()
+        _ensure_mobile_catalog_service_catalog_group_id_column()
+        _ensure_catalog_service_duration_minutes_column()
+        _ensure_mobile_catalog_service_duration_minutes_column()
     except OperationalError as e:
         _log.error("PostgreSQL connection failed: %s", e)
         _log.error(

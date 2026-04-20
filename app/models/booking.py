@@ -18,6 +18,7 @@ class BranchBooking(Base, TimestampMixin):
     service_summary: Mapped[str] = mapped_column(Text, default="")
     # Primary catalog service id when booked — used for loyalty eligibility and price.
     service_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    selected_addon_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     slot_date: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
     start_time: Mapped[str] = mapped_column(String(8), nullable=False)

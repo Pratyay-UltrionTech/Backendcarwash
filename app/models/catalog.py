@@ -32,6 +32,9 @@ class CatalogServiceItem(Base, TimestampMixin):
     recommended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     description_points: Mapped[str] = mapped_column(Text, default="[]")  # JSON array as text
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    catalog_group_id: Mapped[str | None] = mapped_column(String(36), nullable=True, default=None)
+    # Base service time for slot math (multiples of 30 minutes); add-ons add +30 each globally.
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
 
     vehicle_block = relationship("VehicleCatalogBlock", back_populates="services")
 

@@ -8,11 +8,18 @@ class BookingCreate(BaseModel):
     vehicle_type: str
     service_summary: str
     service_id: str | None = None
+    selected_addon_ids: list[str] = Field(default_factory=list)
     slot_date: str
     start_time: str
-    end_time: str
+    # If omitted, end is computed from ``service_id`` duration + ``selected_addon_ids`` (+30 min each).
+    end_time: str | None = None
     source: str = "online"
     tip_cents: int = Field(default=0, ge=0, le=50_000)
+    notes: str = ""
+    bay_number: int | None = None
+    assigned_washer_id: str | None = None
+    """Optional client-generated id so the portal can sync without replacing booking keys."""
+    booking_id: str | None = None
 
 
 class BookingUpdate(BaseModel):
@@ -26,6 +33,7 @@ class BookingUpdate(BaseModel):
     vehicle_type: str | None = None
     service_summary: str | None = None
     service_id: str | None = None
+    selected_addon_ids: list[str] | None = None
     slot_date: str | None = None
     start_time: str | None = None
     end_time: str | None = None
@@ -41,6 +49,8 @@ class BookingOut(BaseModel):
     vehicle_type: str
     service_summary: str
     service_id: str | None = None
+    selected_addon_ids: list[str] = Field(default_factory=list)
+    duration_minutes: int = 0
     slot_date: str
     start_time: str
     end_time: str

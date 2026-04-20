@@ -145,11 +145,19 @@ def get_loyalty(branch_id: str, db: DbSession, request: Request) -> dict[str, An
 
 @router.get("/branches/{branch_id}/slots")
 def list_slots(
-    branch_id: str, db: DbSession, request: Request, date: str = Query(..., description="ISO date YYYY-MM-DD")
+    branch_id: str,
+    db: DbSession,
+    request: Request,
+    date: str = Query(..., description="ISO date YYYY-MM-DD"),
+    duration_minutes: int | None = Query(
+        default=None,
+        ge=30,
+        description="Total booking duration (service + add-ons). Defaults to one 30-minute base slot.",
+    ),
 ) -> list[dict[str, Any]]:
     started = monotonic_ms()
     b = _branch_or_404(db, branch_id)
-    out = slot_service.list_available_slots(db, b, date)
+    out = slot_service.list_available_slots(db, b, date, booking_duration_minutes=duration_minutes)
     action_log("public_list_slots", "success", request, branch_id=branch_id, date=date, row_count=len(out), latency_ms=round(monotonic_ms() - started, 2))
     return out
 
@@ -160,6 +168,11 @@ def branch_snapshot(
     db: DbSession,
     request: Request,
     date: str | None = Query(default=None, description="ISO date YYYY-MM-DD for slot list"),
+    duration_minutes: int | None = Query(
+        default=None,
+        ge=30,
+        description="When ``date`` is set, total booking duration for slot availability.",
+    ),
 ) -> dict[str, Any]:
     from app.models import DayTimePriceRule, FreeCoffeeRule, Promotion
 
@@ -179,7 +192,9 @@ def branch_snapshot(
     coffee = db.query(FreeCoffeeRule).filter(FreeCoffeeRule.branch_id == branch_id).all()
     loyalty = db.query(BranchLoyalty).filter(BranchLoyalty.branch_id == branch_id).one()
     slot_row = db.query(BranchSlotSettings).filter(BranchSlotSettings.branch_id == branch_id).one()
-    slots = slot_service.list_available_slots(db, b, date) if date else []
+    slots = (
+        slot_service.list_available_slots(db, b, date, booking_duration_minutes=duration_minutes) if date else []
+    )
     out = {
         "branch": branch_to_dict(b),
         "vehicle_blocks": [vehicle_block_to_dict(v) for v in blocks],
@@ -244,11 +259,13 @@ def create_online_booking(branch_id: str, body: BookingCreate, db: DbSession, re
             vehicle_type=body.vehicle_type,
             service_summary=body.service_summary,
             service_id=body.service_id,
+            selected_addon_ids=body.selected_addon_ids,
             slot_date=body.slot_date,
             start_time=body.start_time,
             end_time=body.end_time,
             source="online",
             tip_cents=body.tip_cents,
+            booking_id=body.booking_id,
         )
         db.commit()
         audit_log(

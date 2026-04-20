@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ServiceItemIn(BaseModel):
@@ -10,6 +10,15 @@ class ServiceItemIn(BaseModel):
     recommended: bool = False
     description_points: list[str] = Field(default_factory=list)
     active: bool = True
+    catalog_group_id: str | None = None
+    duration_minutes: int = Field(default=60, ge=30, description="Snapped up to a multiple of 30 minutes")
+
+    @field_validator("duration_minutes")
+    @classmethod
+    def _snap_duration(cls, v: int) -> int:
+        from app.services.duration_slots import snap_duration_to_base_slots
+
+        return snap_duration_to_base_slots(v)
 
 
 class AddonItemIn(BaseModel):

@@ -80,6 +80,8 @@ class MobileCatalogServiceItem(Base, TimestampMixin):
     recommended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     description_points: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    catalog_group_id: Mapped[str | None] = mapped_column(String(36), nullable=True, default=None)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
 
     vehicle_block = relationship("MobileVehicleCatalogBlock", back_populates="services")
 

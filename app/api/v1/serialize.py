@@ -15,7 +15,9 @@ from app.models import (
     VehicleCatalogBlock,
     Washer,
 )
+from app.services.duration_slots import snap_duration_to_base_slots
 from app.services.jsonutil import loads_json_array
+from app.services import slot_service
 
 
 def service_to_dict(s: CatalogServiceItem) -> dict[str, Any]:
@@ -28,6 +30,8 @@ def service_to_dict(s: CatalogServiceItem) -> dict[str, Any]:
         "recommended": s.recommended,
         "description_points": loads_json_array(s.description_points),
         "active": s.active,
+        "catalog_group_id": getattr(s, "catalog_group_id", None),
+        "duration_minutes": int(getattr(s, "duration_minutes", 60) or 60),
     }
 
 
@@ -112,6 +116,8 @@ def slot_settings_to_dict(s: BranchSlotSettings) -> dict[str, Any]:
 def booking_to_dict(b: BranchBooking) -> dict[str, Any]:
     created = b.created_at.isoformat() if getattr(b, "created_at", None) else None
     completed = b.completed_at.isoformat() if getattr(b, "completed_at", None) else None
+    s0, s1 = slot_service.booking_span_minutes(b.start_time, b.end_time)
+    duration_minutes = snap_duration_to_base_slots(s1 - s0)
     return {
         "id": b.id,
         "branch_id": b.branch_id,
@@ -121,6 +127,8 @@ def booking_to_dict(b: BranchBooking) -> dict[str, Any]:
         "vehicle_type": b.vehicle_type,
         "service_summary": b.service_summary,
         "service_id": getattr(b, "service_id", None),
+        "selected_addon_ids": loads_json_array(getattr(b, "selected_addon_ids_json", "[]") or "[]"),
+        "duration_minutes": duration_minutes,
         "slot_date": b.slot_date,
         "start_time": b.start_time,
         "end_time": b.end_time,
