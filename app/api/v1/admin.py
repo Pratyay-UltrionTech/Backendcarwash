@@ -7,6 +7,7 @@ from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -83,7 +84,8 @@ def _has_active_bookings(db: Session, branch_id: str) -> bool:
 
 
 def _ensure_unique_branch_name(db: Session, name: str, exclude_id: str | None = None) -> None:
-    q = db.query(Branch).filter(Branch.name == name)
+    normalized_name = name.strip().lower()
+    q = db.query(Branch).filter(func.lower(Branch.name) == normalized_name)
     if exclude_id:
         q = q.filter(Branch.id != exclude_id)
     if q.first():
@@ -91,9 +93,13 @@ def _ensure_unique_branch_name(db: Session, name: str, exclude_id: str | None = 
 
 
 def _ensure_unique_manager_email(db: Session, branch_id: str, email: str, exclude_id: str | None = None) -> None:
-    if not email.strip():
+    normalized_email = email.strip().lower()
+    if not normalized_email:
         return
-    q = db.query(BranchManager).filter(BranchManager.branch_id == branch_id, BranchManager.email == email)
+    q = db.query(BranchManager).filter(
+        BranchManager.branch_id == branch_id,
+        func.lower(BranchManager.email) == normalized_email,
+    )
     if exclude_id:
         q = q.filter(BranchManager.id != exclude_id)
     if q.first():
@@ -243,13 +249,14 @@ def create_manager(
     started = monotonic_ms()
     admin_id = str(_admin["sub"])
     _branch_or_404(db, branch_id)
-    _ensure_unique_manager_email(db, branch_id, body.email)
+    normalized_email = body.email.strip().lower()
+    _ensure_unique_manager_email(db, branch_id, normalized_email)
     m = BranchManager(
         branch_id=branch_id,
         name=body.name,
         address=body.address,
         zip_code=body.zip_code,
-        email=body.email,
+        email=normalized_email,
         phone=body.phone,
         doj=body.doj,
         login_id=body.login_id,
@@ -284,8 +291,10 @@ def update_manager(
     if not m:
         raise HTTPException(status_code=404, detail={"detail": "Manager not found", "code": "not_found"})
     data = body.model_dump(exclude_unset=True)
-    next_email = data.get("email", m.email)
+    next_email = str(data.get("email", m.email) or "").strip().lower()
     _ensure_unique_manager_email(db, branch_id, next_email, exclude_id=manager_id)
+    if "email" in data:
+        data["email"] = next_email
     if "password" in data and data["password"]:
         m.password_hash = hash_password(data.pop("password"))
     for k, v in data.items():
