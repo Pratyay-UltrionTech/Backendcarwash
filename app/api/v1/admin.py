@@ -217,7 +217,7 @@ def delete_branch(branch_id: str, db: DbSession, _admin: AdminUser, request: Req
     if _has_active_bookings(db, branch_id):
         raise HTTPException(
             status_code=409,
-            detail={"detail": "Branch has active bookings and cannot be deleted", "code": "active_bookings"},
+            detail={"detail": "There are active bookings for this branch. It cannot be deleted.", "code": "active_bookings"},
         )
     db.delete(b)
     db.commit()
