@@ -16,6 +16,7 @@ from app.schemas.auth import (
     WasherLoginRequest,
 )
 from app.schemas.customer_auth import CustomerAuthResponse, CustomerLoginRequest, CustomerRegisterRequest
+from app.services.jsonutil import loads_json_array
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -270,4 +271,9 @@ def mobile_washer_login(body: MobileWasherLoginRequest, db: DbSession) -> Mobile
             )
 
     token = create_access_token({"role": "mobile_washer", "sub": w.id, "city_pin_code": w.city_pin_code})
-    return MobileWasherTokenResponse(access_token=token, city_pin_code=w.city_pin_code or "")
+    return MobileWasherTokenResponse(
+        access_token=token,
+        city_pin_code=w.city_pin_code or "",
+        service_pin_code=str(w.service_pin_code or ""),
+        serviceable_zip_codes=[str(z).strip() for z in loads_json_array(w.serviceable_zip_codes_json) if str(z).strip()],
+    )

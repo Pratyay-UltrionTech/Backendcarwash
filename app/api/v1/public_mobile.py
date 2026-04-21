@@ -292,12 +292,8 @@ def create_mobile_booking(body: MobileBookingCreate, db: DbSession, request: Req
                 end_time,
                 assigned_driver_id,
             )
-        else:
-            assigned_driver_id = mobile_slot_service.allocate_driver_for_interval(
-                db, manager, body.slot_date, body.start_time, end_time
-            )
-            if assigned_driver_id is None:
-                raise ValueError("slot_unavailable")
+        # For user-portal mobile bookings, keep assignment unassigned unless explicitly provided.
+        # Mobile manager or eligible mobile driver will assign/accept later.
     except ValueError as e:
         code = str(e)
         if code == "slot_unavailable":

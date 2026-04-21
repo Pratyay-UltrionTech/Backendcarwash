@@ -51,3 +51,5 @@ class MobileWasherTokenResponse(TokenResponse):
     """Returned by mobile washer login so the client can store the manager city PIN without asking the user."""
 
     city_pin_code: str = ""
+    service_pin_code: str = ""
+    serviceable_zip_codes: list[str] = Field(default_factory=list)

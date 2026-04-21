@@ -82,8 +82,8 @@ class PromoIn(BaseModel):
             raise ValueError("validity_start cannot be in the past")
         if end < start:
             raise ValueError("validity_end must be on or after validity_start")
-        if self.discount_type == "percentage" and self.discount_value > 100:
-            raise ValueError("percentage discount_value cannot exceed 100")
+        if self.discount_type == "percentage" and self.discount_value >= 100:
+            raise ValueError("percentage discount_value must be less than 100")
         return self
 
 

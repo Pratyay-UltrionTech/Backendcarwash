@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
+from datetime import date
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class MobileManagerCreate(BaseModel):
@@ -105,6 +107,36 @@ class MobilePromoIn(BaseModel):
     max_uses_per_customer: int = 1
     applicable_service_ids: list[str] = Field(default_factory=list)
     applicable_vehicle_types: list[str] = Field(default_factory=list)
+
+    @field_validator("code_name")
+    @classmethod
+    def _code_name_required(cls, v: str) -> str:
+        out = v.strip()
+        if not out:
+            raise ValueError("code_name is required")
+        return out
+
+    @field_validator("discount_value")
+    @classmethod
+    def _discount_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("discount_value must be >= 0")
+        return v
+
+    @model_validator(mode="after")
+    def _validate_dates_and_discount(self):
+        if not self.validity_start or not self.validity_end:
+            raise ValueError("validity_start and validity_end are required")
+        start = date.fromisoformat(self.validity_start)
+        end = date.fromisoformat(self.validity_end)
+        today = date.today()
+        if start < today:
+            raise ValueError("validity_start cannot be in the past")
+        if end < start:
+            raise ValueError("validity_end must be on or after validity_start")
+        if self.discount_type == "percentage" and self.discount_value >= 100:
+            raise ValueError("percentage discount_value must be less than 100")
+        return self
 
 
 class MobileDayTimeRuleIn(BaseModel):
