@@ -8,12 +8,19 @@ from typing import Any
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.models import Branch, BranchBooking, MobileBooking
+from app.models import Branch, BranchBooking, LoyaltyLedgerEntry, MobileBooking
 from app.services.jsonutil import loads_json_array
 from app.services.loyalty_service import normalize_phone
 
 
 def service_history_items_for_phone(db: Session, phone: str, *, limit: int = 100) -> list[dict[str, Any]]:
+    ledger_rows = (
+        db.query(LoyaltyLedgerEntry.channel, LoyaltyLedgerEntry.booking_id)
+        .filter(LoyaltyLedgerEntry.customer_phone_normalized == pn)
+        .all()
+    )
+    loyalty_points_by_booking = {(str(ch), str(bid)) for ch, bid in ledger_rows}
+
     pn = normalize_phone(phone or "")
     if not pn:
         return []
@@ -46,6 +53,7 @@ def service_history_items_for_phone(db: Session, phone: str, *, limit: int = 100
                     "selected_addon_ids": loads_json_array(getattr(b, "selected_addon_ids_json", "[]") or "[]"),
                     "service_summary": (b.service_summary or "").strip(),
                     "vehicle_type": (b.vehicle_type or "").strip(),
+                    "loyalty_points_earned": 1 if ("branch", str(b.id)) in loyalty_points_by_booking else 0,
                     "created_at": ca.isoformat() if ca else None,
                 },
             )
@@ -71,6 +79,7 @@ def service_history_items_for_phone(db: Session, phone: str, *, limit: int = 100
                     "service_id": m.service_id,
                     "service_summary": (m.vehicle_summary or "").strip(),
                     "vehicle_type": (m.vehicle_type or "").strip(),
+                    "loyalty_points_earned": 1 if ("mobile", str(m.id)) in loyalty_points_by_booking else 0,
                     "created_at": ca.isoformat() if ca else None,
                 },
             )

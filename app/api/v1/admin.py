@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -69,6 +70,74 @@ def _branch_or_404(db: Session, branch_id: str) -> Branch:
     return b
 
 
+def _has_active_bookings(db: Session, branch_id: str) -> bool:
+    return (
+        db.query(BranchBooking)
+        .filter(
+            BranchBooking.branch_id == branch_id,
+            BranchBooking.status.in_(["scheduled", "checked_in", "in_progress"]),
+        )
+        .first()
+        is not None
+    )
+
+
+def _ensure_unique_branch_name(db: Session, name: str, exclude_id: str | None = None) -> None:
+    q = db.query(Branch).filter(Branch.name == name)
+    if exclude_id:
+        q = q.filter(Branch.id != exclude_id)
+    if q.first():
+        raise HTTPException(status_code=409, detail={"detail": "Branch name already exists", "code": "conflict"})
+
+
+def _ensure_unique_manager_email(db: Session, branch_id: str, email: str, exclude_id: str | None = None) -> None:
+    if not email.strip():
+        return
+    q = db.query(BranchManager).filter(BranchManager.branch_id == branch_id, BranchManager.email == email)
+    if exclude_id:
+        q = q.filter(BranchManager.id != exclude_id)
+    if q.first():
+        raise HTTPException(status_code=409, detail={"detail": "Manager email already exists", "code": "conflict"})
+
+
+def _date_ranges_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> bool:
+    if not start_a or not end_a or not start_b or not end_b:
+        return True
+    a_start = date.fromisoformat(start_a)
+    a_end = date.fromisoformat(end_a)
+    b_start = date.fromisoformat(start_b)
+    b_end = date.fromisoformat(end_b)
+    return max(a_start, b_start) <= min(a_end, b_end)
+
+
+def _times_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> bool:
+    if not start_a or not end_a or not start_b or not end_b:
+        return True
+    return max(start_a, start_b) < min(end_a, end_b)
+
+
+def _ensure_no_day_rule_overlap(
+    db: Session, branch_id: str, body: DayTimeRuleIn, exclude_id: str | None = None
+) -> None:
+    rows = db.query(DayTimePriceRule).filter(DayTimePriceRule.branch_id == branch_id).all()
+    for row in rows:
+        if exclude_id and row.id == exclude_id:
+            continue
+        if not _date_ranges_overlap(body.validity_start, body.validity_end, row.validity_start, row.validity_end):
+            continue
+        other_days = json.loads(row.applicable_days or "[]")
+        days_a = set(body.applicable_days or [])
+        days_b = set(other_days or [])
+        days_overlap = not days_a or not days_b or bool(days_a & days_b)
+        if not days_overlap:
+            continue
+        if _times_overlap(body.time_window_start, body.time_window_end, row.time_window_start, row.time_window_end):
+            raise HTTPException(
+                status_code=409,
+                detail={"detail": "Pricing rule overlaps with an existing rule", "code": "overlap_conflict"},
+            )
+
+
 @router.get("/branches")
 def list_branches(db: DbSession, _admin: AdminUser) -> list[dict[str, Any]]:
     rows = db.query(Branch).order_by(Branch.name).all()
@@ -79,6 +148,7 @@ def list_branches(db: DbSession, _admin: AdminUser) -> list[dict[str, Any]]:
 def create_branch(body: BranchCreate, db: DbSession, _admin: AdminUser, request: Request) -> dict[str, Any]:
     started = monotonic_ms()
     admin_id = str(_admin["sub"])
+    _ensure_unique_branch_name(db, body.name)
     b = Branch(
         name=body.name,
         location=body.location,
@@ -116,6 +186,8 @@ def update_branch(
     admin_id = str(_admin["sub"])
     b = _branch_or_404(db, branch_id)
     data = body.model_dump(exclude_unset=True)
+    if "name" in data:
+        _ensure_unique_branch_name(db, data["name"], exclude_id=branch_id)
     for k, v in data.items():
         setattr(b, k, v)
     db.commit()
@@ -136,6 +208,11 @@ def delete_branch(branch_id: str, db: DbSession, _admin: AdminUser, request: Req
     started = monotonic_ms()
     admin_id = str(_admin["sub"])
     b = _branch_or_404(db, branch_id)
+    if _has_active_bookings(db, branch_id):
+        raise HTTPException(
+            status_code=409,
+            detail={"detail": "Branch has active bookings and cannot be deleted", "code": "active_bookings"},
+        )
     db.delete(b)
     db.commit()
     audit_log("admin", admin_id, "delete_branch", request, branch_id=branch_id)
@@ -166,6 +243,7 @@ def create_manager(
     started = monotonic_ms()
     admin_id = str(_admin["sub"])
     _branch_or_404(db, branch_id)
+    _ensure_unique_manager_email(db, branch_id, body.email)
     m = BranchManager(
         branch_id=branch_id,
         name=body.name,
@@ -206,6 +284,8 @@ def update_manager(
     if not m:
         raise HTTPException(status_code=404, detail={"detail": "Manager not found", "code": "not_found"})
     data = body.model_dump(exclude_unset=True)
+    next_email = data.get("email", m.email)
+    _ensure_unique_manager_email(db, branch_id, next_email, exclude_id=manager_id)
     if "password" in data and data["password"]:
         m.password_hash = hash_password(data.pop("password"))
     for k, v in data.items():
@@ -679,6 +759,7 @@ def create_day_rule(branch_id: str, body: DayTimeRuleIn, db: DbSession, _admin: 
     started = monotonic_ms()
     admin_id = str(_admin["sub"])
     _branch_or_404(db, branch_id)
+    _ensure_no_day_rule_overlap(db, branch_id, body)
     rid = body.id or new_id()
     r = DayTimePriceRule(
         id=rid,
@@ -722,6 +803,7 @@ def update_day_rule(
     )
     if not r:
         raise HTTPException(status_code=404, detail={"detail": "Rule not found", "code": "not_found"})
+    _ensure_no_day_rule_overlap(db, branch_id, body, exclude_id=rule_id)
     r.title = body.title
     r.description = body.description
     r.discount_type = body.discount_type

@@ -25,6 +25,14 @@ from app.services.slot_service import add_minutes_to_hhmm
 router = APIRouter(prefix="/manager/mobile", tags=["manager-mobile"])
 
 
+def _extract_requested_pin(address: str) -> str:
+    digits = "".join(ch if ch.isdigit() else " " for ch in str(address or ""))
+    for token in digits.split():
+        if len(token) in (5, 6):
+            return token
+    return ""
+
+
 def _driver_to_dict(d: MobileServiceDriver) -> dict[str, Any]:
     return {
         "id": d.id,
@@ -136,6 +144,7 @@ def create_booking(
     dur_m = mobile_slot_service.resolve_mobile_booking_duration_minutes(db, body.service_id, body.selected_addon_ids)
     end_time = body.end_time or add_minutes_to_hhmm(body.start_time, dur_m)
     assigned_driver_id = body.assigned_driver_id
+    requested_pin = _extract_requested_pin(body.address)
     try:
         mobile_slot_service.assert_slot_available(db, manager_row, body.slot_date, body.start_time, end_time)
         if assigned_driver_id:
@@ -146,10 +155,16 @@ def create_booking(
                 body.start_time,
                 end_time,
                 assigned_driver_id,
+                requested_pin=requested_pin,
             )
         else:
             assigned_driver_id = mobile_slot_service.allocate_driver_for_interval(
-                db, manager_row, body.slot_date, body.start_time, end_time
+                db,
+                manager_row,
+                body.slot_date,
+                body.start_time,
+                end_time,
+                requested_pin=requested_pin,
             )
             if assigned_driver_id is None:
                 raise ValueError("slot_unavailable")
@@ -161,6 +176,8 @@ def create_booking(
             raise HTTPException(status_code=409, detail={"detail": "Driver is not available for this slot", "code": "driver_unavailable"})
         if code == "driver_busy":
             raise HTTPException(status_code=409, detail={"detail": "Driver is already assigned in this slot", "code": "driver_busy"})
+        if code == "driver_zip_mismatch":
+            raise HTTPException(status_code=409, detail={"detail": "Driver is not serviceable for booking zip", "code": "driver_zip_mismatch"})
         raise HTTPException(status_code=400, detail={"detail": "Invalid slot assignment", "code": "invalid_slot"})
     bid = _parse_mobile_booking_id(body.booking_id)
 
@@ -239,6 +256,7 @@ def patch_booking(
         row.slot_date = sd
         row.start_time = st
         row.end_time = et
+    requested_pin = _extract_requested_pin(str(data.get("address", row.address)))
 
     if "customer_name" in data and data["customer_name"] is not None:
         row.customer_name = str(data["customer_name"]).strip()
@@ -275,6 +293,7 @@ def patch_booking(
                     row.end_time,
                     driver_id,
                     exclude_booking_id=row.id,
+                    requested_pin=requested_pin,
                 )
             except ValueError as e:
                 code = str(e)
@@ -284,6 +303,8 @@ def patch_booking(
                     raise HTTPException(status_code=409, detail={"detail": "Driver is already assigned in this slot", "code": "driver_busy"})
                 if code == "slot_unavailable":
                     raise HTTPException(status_code=409, detail={"detail": "Selected slot is not available", "code": "slot_unavailable"})
+                if code == "driver_zip_mismatch":
+                    raise HTTPException(status_code=409, detail={"detail": "Driver is not serviceable for booking zip", "code": "driver_zip_mismatch"})
                 raise HTTPException(status_code=400, detail={"detail": "Invalid driver assignment", "code": "invalid_slot"})
         row.assigned_driver_id = driver_id
     if "status" in data and data["status"] is not None:

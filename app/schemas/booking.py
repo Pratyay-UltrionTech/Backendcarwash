@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class BookingCreate(BaseModel):
@@ -21,6 +21,14 @@ class BookingCreate(BaseModel):
     """Optional client-generated id so the portal can sync without replacing booking keys."""
     booking_id: str | None = None
 
+    @field_validator("customer_name", "phone", "vehicle_type", "service_summary", "slot_date", "start_time")
+    @classmethod
+    def _required_non_blank(cls, v: str) -> str:
+        out = v.strip()
+        if not out:
+            raise ValueError("field is required")
+        return out
+
 
 class BookingUpdate(BaseModel):
     status: str | None = None
@@ -38,6 +46,16 @@ class BookingUpdate(BaseModel):
     start_time: str | None = None
     end_time: str | None = None
     tip_cents: int | None = Field(default=None, ge=0, le=50_000)
+
+    @field_validator("customer_name", "phone", "vehicle_type", "service_summary", "slot_date", "start_time", "end_time")
+    @classmethod
+    def _optional_non_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        out = v.strip()
+        if not out:
+            raise ValueError("field cannot be blank")
+        return out
 
 
 class BookingOut(BaseModel):

@@ -67,6 +67,20 @@ def resolve_mobile_booking_duration_minutes(
     return total_minutes_for_service_and_addons(int(row.duration_minutes or 60), n_addons)
 
 
+def _normalize_pin(v: str | None) -> str:
+    return "".join(ch for ch in str(v or "") if ch.isdigit())[:6]
+
+
+def _driver_can_service_pin(driver: MobileServiceDriver, requested_pin: str | None) -> bool:
+    pin = _normalize_pin(requested_pin)
+    if not pin:
+        return True
+    if _normalize_pin(driver.service_pin_code) == pin:
+        return True
+    zips = { _normalize_pin(z) for z in loads_json_array(driver.serviceable_zip_codes_json) }
+    return pin in zips
+
+
 def _open_driver_ids_for_slot(
     slot_settings: MobileSlotSettings | None,
     active_drivers: list[MobileServiceDriver],
@@ -124,6 +138,7 @@ def is_driver_available_for_interval(
     driver_id: str,
     *,
     exclude_booking_id: str | None = None,
+    requested_pin: str | None = None,
 ) -> bool:
     slot_settings = (
         db.query(MobileSlotSettings).filter(MobileSlotSettings.manager_id == manager.id).one_or_none()
@@ -137,7 +152,10 @@ def is_driver_available_for_interval(
         .order_by(MobileServiceDriver.created_at.asc(), MobileServiceDriver.id.asc())
         .all()
     )
-    if not any(d.id == driver_id for d in active_drivers):
+    target_driver = next((d for d in active_drivers if d.id == driver_id), None)
+    if target_driver is None:
+        return False
+    if not _driver_can_service_pin(target_driver, requested_pin):
         return False
 
     bookings = (
@@ -184,6 +202,7 @@ def allocate_driver_for_interval(
     end_time: str,
     *,
     exclude_booking_id: str | None = None,
+    requested_pin: str | None = None,
 ) -> str | None:
     active_drivers = (
         db.query(MobileServiceDriver)
@@ -195,8 +214,17 @@ def allocate_driver_for_interval(
         .all()
     )
     for d in active_drivers:
+        if not _driver_can_service_pin(d, requested_pin):
+            continue
         if is_driver_available_for_interval(
-            db, manager, slot_date, start_time, end_time, d.id, exclude_booking_id=exclude_booking_id
+            db,
+            manager,
+            slot_date,
+            start_time,
+            end_time,
+            d.id,
+            exclude_booking_id=exclude_booking_id,
+            requested_pin=requested_pin,
         ):
             return d.id
     return None
@@ -342,6 +370,7 @@ def assert_driver_assignable(
     end_time: str,
     driver_id: str,
     exclude_booking_id: str | None = None,
+    requested_pin: str | None = None,
 ) -> None:
     d = (
         db.query(MobileServiceDriver)
@@ -354,8 +383,17 @@ def assert_driver_assignable(
     )
     if not d:
         raise ValueError("driver_not_open")
+    if not _driver_can_service_pin(d, requested_pin):
+        raise ValueError("driver_zip_mismatch")
     if not is_driver_available_for_interval(
-        db, manager, slot_date, start_time, end_time, driver_id, exclude_booking_id=exclude_booking_id
+        db,
+        manager,
+        slot_date,
+        start_time,
+        end_time,
+        driver_id,
+        exclude_booking_id=exclude_booking_id,
+        requested_pin=requested_pin,
     ):
         raise ValueError("driver_busy")
 

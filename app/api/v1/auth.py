@@ -55,7 +55,12 @@ def customer_register(body: CustomerRegisterRequest, db: DbSession) -> CustomerA
 def customer_login(body: CustomerLoginRequest, db: DbSession) -> CustomerAuthResponse:
     email_n = _normalize_customer_email(str(body.email))
     user = db.query(CustomerUser).filter(CustomerUser.email == email_n).one_or_none()
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail={"detail": "User not registered", "code": "user_not_registered"},
+        )
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=401,
             detail={"detail": "Invalid email or password", "code": "invalid_credentials"},
@@ -188,11 +193,20 @@ def mobile_manager_login(body: MobileManagerLoginRequest, db: DbSession) -> Mobi
 @router.post("/mobile/washer/login", response_model=MobileWasherTokenResponse)
 def mobile_washer_login(body: MobileWasherLoginRequest, db: DbSession) -> MobileWasherTokenResponse:
     pin = normalize_mobile_city_pin(body.city_pin_code)
+    raw_pin = str(body.city_pin_code or "").strip()
     login_id = str(body.login_id or "").strip()
     if not login_id:
         raise HTTPException(
             status_code=400,
             detail={"detail": "login_id is required", "code": "validation_error"},
+        )
+    if raw_pin and not is_valid_mobile_city_pin(pin):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "detail": "Enter a valid 4–6 digit city PIN.",
+                "code": "invalid_pin_code",
+            },
         )
 
     w: MobileServiceDriver | None = None
