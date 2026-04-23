@@ -14,16 +14,16 @@ from app.services.loyalty_service import normalize_phone
 
 
 def service_history_items_for_phone(db: Session, phone: str, *, limit: int = 100) -> list[dict[str, Any]]:
+    pn = normalize_phone(phone or "")
+    if not pn:
+        return []
+
     ledger_rows = (
         db.query(LoyaltyLedgerEntry.channel, LoyaltyLedgerEntry.booking_id)
         .filter(LoyaltyLedgerEntry.customer_phone_normalized == pn)
         .all()
     )
     loyalty_points_by_booking = {(str(ch), str(bid)) for ch, bid in ledger_rows}
-
-    pn = normalize_phone(phone or "")
-    if not pn:
-        return []
 
     scored: list[tuple[datetime, dict[str, Any]]] = []
 
@@ -74,7 +74,7 @@ def service_history_items_for_phone(db: Session, phone: str, *, limit: int = 100
                     "start_time": m.start_time,
                     "end_time": m.end_time,
                     "location_label": f"Mobile · PIN {m.city_pin_code}",
-                    "branch_id": f"mobile_{m.city_pin_code}",
+                    "branch_id": f"mobile-{m.city_pin_code}",
                     "city_pin_code": m.city_pin_code,
                     "service_id": m.service_id,
                     "service_summary": (m.vehicle_summary or "").strip(),

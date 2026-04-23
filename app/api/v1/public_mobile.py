@@ -142,6 +142,22 @@ def list_public_mobile_day_time_rules(db: DbSession, request: Request) -> list[d
     return out
 
 
+@router.get("/promotions")
+def list_public_mobile_promotions(db: DbSession, request: Request) -> list[dict[str, Any]]:
+    """Public list of mobile promotions (for USER home offers and coupon picker)."""
+    started = monotonic_ms()
+    rows = db.query(MobilePromotion).order_by(MobilePromotion.created_at.desc()).all()
+    out = [_promotion_to_dict(p) for p in rows]
+    action_log(
+        "public_mobile_list_promotions",
+        "success",
+        request,
+        row_count=len(out),
+        latency_ms=round(monotonic_ms() - started, 2),
+    )
+    return out
+
+
 @router.get("/serviceability/{pin_code}")
 def check_serviceability(pin_code: str, db: DbSession, request: Request) -> dict[str, Any]:
     started = monotonic_ms()
