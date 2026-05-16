@@ -7,6 +7,10 @@ from app.models.staff import Washer
 
 
 
+
+
+
+
 db = SessionLocal()
 try:
     w_count = db.query(Washer).count()
