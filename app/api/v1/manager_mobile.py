@@ -429,6 +429,12 @@ def patch_booking(
         row.notes = str(data["notes"])
     if "tip_cents" in data and data["tip_cents"] is not None:
         row.tip_cents = max(0, int(data["tip_cents"]))
+
+    # A booking with an assigned driver must not remain in scheduled state (manager portal
+    # may send status=scheduled in the same PATCH as assigned_driver_id).
+    if row.assigned_driver_id and row.status == "scheduled":
+        row.status = "assigned"
+
     loyalty_service.on_mobile_booking_status_change(db, row, prev_status)
     try:
         db.commit()

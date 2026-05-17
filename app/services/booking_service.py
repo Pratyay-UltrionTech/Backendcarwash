@@ -381,3 +381,8 @@ def patch_branch_booking_fields(db: Session, branch: Branch, job: BranchBooking,
 
     if "notes" in data and data["notes"] is not None:
         job.notes = str(data["notes"])
+
+    # A booking with an assigned washer must not remain in scheduled state (manager portal
+    # may send status=scheduled in the same PATCH as assigned_washer_id).
+    if job.assigned_washer_id and job.status == "scheduled":
+        job.status = "assigned"
