@@ -177,6 +177,8 @@ def create_booking(
     db.flush()
     if assigned_washer_id:
         assign_washer(db, job, assigned_washer_id.strip() if isinstance(assigned_washer_id, str) else None)
+        if job.assigned_washer_id:
+            job.status = "assigned"
     return job
 
 
