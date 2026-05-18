@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import and_, desc, false, or_
+from sqlalchemy import and_, desc, false, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -15,6 +15,7 @@ from app.models import (
     BranchLoyalty,
     CatalogServiceItem,
     LoyaltyLedgerEntry,
+    LoyaltyReward,
     MobileBooking,
     MobileCatalogServiceItem,
     MobileLoyaltyProgram,
@@ -90,6 +91,148 @@ def _ledger_exists(db: Session, channel: str, booking_id: str) -> bool:
     )
 
 
+def _last_redemption_dt(
+    db: Session, channel: str, branch_id: str | None, city_pin: str | None, customer_id: str
+) -> datetime | None:
+    """Return the redeemed_at of the most recent redeemed reward for this customer+channel."""
+    q = (
+        db.query(LoyaltyReward.redeemed_at)
+        .filter(
+            LoyaltyReward.customer_id == customer_id,
+            LoyaltyReward.channel == channel,
+            LoyaltyReward.status == "redeemed",
+            LoyaltyReward.redeemed_at.isnot(None),
+        )
+    )
+    if channel == "branch" and branch_id:
+        q = q.filter(LoyaltyReward.branch_id == branch_id)
+    elif channel == "mobile" and city_pin:
+        q = q.filter(LoyaltyReward.city_pin_code == city_pin)
+    row = q.order_by(desc(LoyaltyReward.redeemed_at)).first()
+    return row[0] if row else None
+
+
+def _count_ledger_since(
+    db: Session,
+    channel: str,
+    branch_id: str | None,
+    city_pin: str | None,
+    customer_id: str,
+    phone_n: str,
+    since_dt: datetime | None = None,
+) -> int:
+    """Count ledger entries for this customer in this channel, optionally only after since_dt."""
+    q = db.query(func.count(LoyaltyLedgerEntry.id)).filter(
+        LoyaltyLedgerEntry.channel == channel,
+        _ledger_customer_clause(customer_id, phone_n),
+    )
+    if channel == "branch" and branch_id:
+        q = q.filter(LoyaltyLedgerEntry.branch_id == branch_id)
+    elif channel == "mobile" and city_pin:
+        q = q.filter(LoyaltyLedgerEntry.city_pin_code == city_pin)
+    if since_dt:
+        q = q.filter(LoyaltyLedgerEntry.completed_at > since_dt)
+    return q.scalar() or 0
+
+
+def _maybe_grant_reward(
+    db: Session,
+    channel: str,
+    branch_id: str | None,
+    city_pin: str | None,
+    customer_id: str,
+    phone_n: str,
+    qualifying_count: int,
+    tiers: list[dict[str, Any]],
+    svc_name_fn,  # callable(service_id) -> str
+) -> "LoyaltyReward | None":
+    """Grant a reward if threshold met and no pending reward already exists. Returns new reward or None."""
+    if not customer_id or not tiers:
+        return None
+    # Only count entries since last redemption (supports counter reset)
+    last_redeemed = _last_redemption_dt(db, channel, branch_id, city_pin, customer_id)
+    count = _count_ledger_since(db, channel, branch_id, city_pin, customer_id, phone_n, since_dt=last_redeemed)
+    if count < qualifying_count:
+        return None
+    # Already has a pending (un-redeemed) reward → don't double-grant
+    pending_q = db.query(LoyaltyReward).filter(
+        LoyaltyReward.customer_id == customer_id,
+        LoyaltyReward.channel == channel,
+        LoyaltyReward.status == "pending",
+    )
+    if channel == "branch" and branch_id:
+        pending_q = pending_q.filter(LoyaltyReward.branch_id == branch_id)
+    elif channel == "mobile" and city_pin:
+        pending_q = pending_q.filter(LoyaltyReward.city_pin_code == city_pin)
+    if pending_q.first():
+        return None
+    # Pick the first tier that has a rewardServiceId
+    tier = next((t for t in tiers if t.get("rewardServiceId")), None)
+    if not tier:
+        return None
+    reward_sid = str(tier["rewardServiceId"])
+    reward_name = svc_name_fn(reward_sid)
+    now = _utcnow()
+    reward = LoyaltyReward(
+        customer_id=customer_id,
+        channel=channel,
+        branch_id=branch_id,
+        city_pin_code=city_pin,
+        tier_id=str(tier.get("id", "")),
+        reward_service_id=reward_sid,
+        reward_service_name=reward_name,
+        status="pending",
+        email_sent=False,
+        granted_at=now,
+    )
+    db.add(reward)
+    return reward
+
+
+def get_active_rewards_for_customer(db: Session, customer_id: str) -> list[dict[str, Any]]:
+    """Return all pending (unredeemed) rewards for a registered customer."""
+    rows = (
+        db.query(LoyaltyReward)
+        .filter(LoyaltyReward.customer_id == customer_id, LoyaltyReward.status == "pending")
+        .order_by(desc(LoyaltyReward.granted_at))
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "channel": r.channel,
+            "branch_id": r.branch_id,
+            "city_pin_code": r.city_pin_code,
+            "reward_service_id": r.reward_service_id,
+            "reward_service_name": r.reward_service_name,
+            "granted_at": r.granted_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+def consume_reward(
+    db: Session, reward_id: str, customer_id: str, booking_id: str
+) -> bool:
+    """Mark a pending reward as redeemed. Returns True if successfully consumed."""
+    reward = (
+        db.query(LoyaltyReward)
+        .filter(
+            LoyaltyReward.id == reward_id,
+            LoyaltyReward.customer_id == customer_id,
+            LoyaltyReward.status == "pending",
+        )
+        .with_for_update()
+        .one_or_none()
+    )
+    if not reward:
+        return False
+    reward.status = "redeemed"
+    reward.redeemed_at = _utcnow()
+    reward.redeemed_booking_id = booking_id
+    return True
+
+
 def on_branch_booking_status_change(db: Session, job: BranchBooking, previous_status: str) -> None:
     """Call after mutating job.status (before or after commit; caller commits)."""
     if previous_status == "completed" and job.status != "completed":
@@ -128,6 +271,28 @@ def on_branch_booking_status_change(db: Session, job: BranchBooking, previous_st
             completed_at=now,
         )
     )
+    # Check if customer hit the loyalty threshold → grant reward
+    if cid:
+        loyalty = db.query(BranchLoyalty).filter(BranchLoyalty.branch_id == job.branch_id).one_or_none()
+        if loyalty:
+            n = max(1, int(loyalty.qualifying_service_count or 10))
+            tiers = _parse_tiers(loyalty.tiers_json)
+            reward = _maybe_grant_reward(
+                db, "branch", job.branch_id, None, cid, phone_n, n, tiers,
+                lambda sid_: _service_name_branch(db, job.branch_id, sid_),
+            )
+            if reward:
+                db.flush()  # ensure reward.id is populated
+                from app.services.email_service import lookup_customer_email, send_loyalty_reward_email
+                to_email, cust_name = lookup_customer_email(db, cid, job.phone)
+                if to_email:
+                    send_loyalty_reward_email(
+                        to_email,
+                        cust_name or job.customer_name,
+                        reward.reward_service_name or reward.reward_service_id,
+                        channel="branch",
+                    )
+                reward.email_sent = bool(to_email)
 
 
 def on_mobile_booking_status_change(db: Session, row: MobileBooking, previous_status: str) -> None:
@@ -167,6 +332,28 @@ def on_mobile_booking_status_change(db: Session, row: MobileBooking, previous_st
             completed_at=now,
         )
     )
+    # Check if customer hit the loyalty threshold → grant reward
+    if cid:
+        loyalty = db.query(MobileLoyaltyProgram).order_by(MobileLoyaltyProgram.created_at.asc()).first()
+        if loyalty:
+            n = max(1, int(loyalty.qualifying_service_count or 10))
+            tiers = _parse_tiers(loyalty.tiers_json)
+            reward = _maybe_grant_reward(
+                db, "mobile", None, row.city_pin_code, cid, phone_n, n, tiers,
+                lambda sid_: _service_name_mobile(db, sid_),
+            )
+            if reward:
+                db.flush()
+                from app.services.email_service import lookup_customer_email, send_loyalty_reward_email
+                to_email, cust_name = lookup_customer_email(db, cid, row.phone)
+                if to_email:
+                    send_loyalty_reward_email(
+                        to_email,
+                        cust_name or row.customer_name,
+                        reward.reward_service_name or reward.reward_service_id,
+                        channel="mobile",
+                    )
+                reward.email_sent = bool(to_email)
 
 
 def _parse_tiers(tiers_json: str) -> list[dict[str, Any]]:

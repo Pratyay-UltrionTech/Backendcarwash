@@ -16,6 +16,7 @@ from app.services.loyalty_service import normalize_phone
 from app.services.customer_history_service import service_history_items_for_customer
 from app.schemas.customer_auth import CustomerProfileUpdate
 from app.services.jsonutil import dumps_json, loads_json_array
+from app.services import otp_service
 
 router = APIRouter(prefix="/customer", tags=["customer"])
 print(">>> CUSTOMER API MODULE LOADED SUCCESSFULLY")
@@ -57,6 +58,13 @@ def get_loyalty_overview(db: DbSession, auth: CustomerAuth, request: Request) ->
     return out
 
 
+@router.get("/loyalty/active-rewards")
+def get_active_rewards(db: DbSession, auth: CustomerAuth, request: Request) -> list[dict[str, Any]]:
+    """Return all pending (unredeemed) loyalty rewards for the authenticated customer."""
+    customer_id = str(auth["sub"])
+    return loyalty_service.get_active_rewards_for_customer(db, customer_id)
+
+
 @router.get("/service-history")
 def get_service_history(db: DbSession, auth: CustomerAuth, request: Request) -> dict[str, Any]:
     """Bookings linked to this member's customer_id (signed-in bookings), newest first."""
@@ -91,23 +99,80 @@ def patch_profile(body: CustomerProfileUpdate, db: DbSession, auth: CustomerAuth
     customer_id = str(auth["sub"])
     u = _customer_or_404(db, customer_id)
     u.full_name = body.full_name.strip()
-    u.phone = body.phone.strip()
     u.address_line = body.address.strip()
 
+    # ── Collect ALL field-level uniqueness/validation errors before persisting ─
+    # This gives the frontend one response that covers every conflicting field
+    # rather than surfacing them one at a time.
+    field_errors: dict[str, str] = {}
+
+    # ── phone uniqueness ──────────────────────────────────────────────────────
+    new_phone = body.phone.strip()
+    phone_changed = new_phone and new_phone != (u.phone or "").strip()
+    if phone_changed:
+        phone_taken = (
+            db.query(CustomerUser.id)
+            .filter(CustomerUser.phone == new_phone, CustomerUser.id != u.id)
+            .first()
+        )
+        if phone_taken:
+            field_errors["phone"] = "Phone number is already linked to an account. Please login to continue."
+
+    # ── email — only validate if the value actually changed ──────────────────
+    # IMPORTANT: always exclude the current user so their own unchanged email
+    # never triggers a false "already taken" error.
+    new_email: str | None = None
+    email_changed = False
     if body.email is not None:
         new_email = str(body.email).strip().lower()
-        if new_email != (u.email or "").strip().lower():
-            taken = (
+        current_email = (u.email or "").strip().lower()
+        email_changed = new_email != current_email
+        if email_changed:
+            email_taken = (
                 db.query(CustomerUser.id)
                 .filter(CustomerUser.email == new_email, CustomerUser.id != u.id)
                 .first()
             )
-            if taken:
-                raise HTTPException(
-                    status_code=409,
-                    detail={"detail": "That email is already in use", "code": "email_taken"},
-                )
-            u.email = new_email
+            if email_taken:
+                field_errors["email"] = "Email already linked to another account"
+            else:
+                # Validate using the signed verification token returned by
+                # POST /auth/customer/verify-email-change.  This is stateless
+                # and works correctly across multiple workers/instances unlike
+                # the previous in-memory OTP check.
+                token_valid = False
+                if body.email_change_token:
+                    try:
+                        from app.core.security import decode_token
+                        payload = decode_token(body.email_change_token)
+                        token_valid = (
+                            payload.get("purpose") == "email_change"
+                            and payload.get("new_email") == new_email
+                            and str(payload.get("sub", "")) == customer_id
+                        )
+                    except Exception:
+                        token_valid = False
+                if not token_valid:
+                    field_errors["email"] = (
+                        "New email not verified. Please verify with the code sent to your new address."
+                    )
+
+    # Surface all field errors in one structured response.
+    if field_errors:
+        raise HTTPException(
+            status_code=422,
+            detail={"field_errors": field_errors},
+        )
+
+    # ── Apply validated values ────────────────────────────────────────────────
+    u.phone = new_phone
+    if email_changed and new_email:
+        u.email = new_email
+        # Best-effort cleanup of any in-memory OTP state (single-worker envs).
+        try:
+            otp_service.clear_otp("email_change", new_email)
+        except Exception:
+            pass
 
     # Replace vehicles with exactly what the client sent — deletions must be honoured.
     from datetime import datetime, timezone
@@ -136,7 +201,16 @@ def patch_profile(body: CustomerProfileUpdate, db: DbSession, auth: CustomerAuth
     db.refresh(u)
     audit_log("customer", customer_id, "update_profile", request)
     action_log("customer_patch_profile", "success", request, customer_id=customer_id, latency_ms=round(monotonic_ms() - started, 2))
-    return _serialize(u)
+    result = _serialize(u)
+    # When the email changed, issue a new access token so the frontend session
+    # immediately reflects the new identity — the old token's `email` claim
+    # would be stale and could cause confusion on the next login.
+    if email_changed and new_email:
+        from app.core.security import create_access_token
+        result["new_access_token"] = create_access_token(
+            {"role": "customer", "sub": u.id, "email": u.email}
+        )
+    return result
 
 
 @router.patch("/bookings/{booking_id}/reschedule")

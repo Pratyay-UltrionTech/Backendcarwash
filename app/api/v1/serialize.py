@@ -151,6 +151,7 @@ def booking_to_dict(b: BranchBooking, db=None) -> dict[str, Any]:
         "end_time": b.end_time,
         "bay_number": b.bay_number,
         "assigned_washer_id": b.assigned_washer_id,
+        "customer_id": str(b.customer_id) if getattr(b, "customer_id", None) else None,
         "status": effective_status(b.status, b.slot_date, b.end_time),
         "source": b.source,
         "notes": b.notes,

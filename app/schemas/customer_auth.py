@@ -30,6 +30,13 @@ class CustomerProfileUpdate(BaseModel):
         default=None,
         description="New sign-in email. Omit or null to keep the current email.",
     )
+    # Signed token returned by POST /auth/customer/verify-email-change.
+    # Required when `email` is set to a new address — replaces the fragile
+    # in-memory OTP check so the flow works across multiple workers.
+    email_change_token: str | None = Field(
+        default=None,
+        description="Short-lived JWT from /auth/customer/verify-email-change.",
+    )
 
 
 class CustomerAuthResponse(TokenResponse):

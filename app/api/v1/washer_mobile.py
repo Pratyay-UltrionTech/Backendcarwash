@@ -57,6 +57,7 @@ def _booking_to_dict(db, b: MobileBooking) -> dict[str, Any]:
         "source": b.source,
         "notes": b.notes,
         "tip_cents": int(b.tip_cents or 0),
+        "customer_id": str(b.customer_id) if getattr(b, "customer_id", None) else None,
         "created_at": b.created_at.isoformat() if b.created_at else None,
         "completed_at": b.completed_at.isoformat() if getattr(b, "completed_at", None) else None,
         "cancelled_at": getattr(b, "cancelled_at", None) and b.cancelled_at.isoformat(),

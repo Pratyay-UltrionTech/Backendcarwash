@@ -1,15 +1,12 @@
 import logging
-import secrets
-import threading
-import time
 
 from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger(__name__)
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func
 
-from app.api.deps import DbSession
+from app.api.deps import CustomerAuth, DbSession
 from app.config import get_settings
 from app.core.mobile_pins import is_valid_mobile_city_pin, normalize_mobile_city_pin
 from app.core.security import create_access_token, hash_password, verify_password
@@ -26,68 +23,25 @@ from app.schemas.auth import (
 )
 from app.schemas.customer_auth import CustomerAuthResponse, CustomerLoginRequest, CustomerRegisterRequest
 from app.services.jsonutil import loads_json_array
+from app.services import otp_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # ---------------------------------------------------------------------------
-# In-memory OTP store
+# Convenience shims — keep callers in this file consistent
 # ---------------------------------------------------------------------------
 
-_otp_lock = threading.Lock()
-_otp_store: dict[str, dict] = {}
-_OTP_TTL = 600      # 10 min to enter the OTP
-_RESET_TTL = 300    # 5 min after verification to submit new password
-
-
-def _make_key(scope: str, identifier: str) -> str:
-    return f"{scope}:{identifier.strip().lower()}"
-
-
-def _generate_otp() -> str:
-    return str(secrets.randbelow(900000) + 100000)
-
-
 def _store_otp(scope: str, identifier: str, email: str) -> str:
-    otp = _generate_otp()
-    with _otp_lock:
-        _otp_store[_make_key(scope, identifier)] = {
-            "otp": otp,
-            "expires_at": time.time() + _OTP_TTL,
-            "verified": False,
-            "verified_at": None,
-            "email": email,
-        }
-    return otp
-
+    return otp_service.store_otp(scope, identifier, email)
 
 def _verify_otp_store(scope: str, identifier: str, otp: str) -> bool:
-    key = _make_key(scope, identifier)
-    with _otp_lock:
-        entry = _otp_store.get(key)
-        if not entry or time.time() > entry["expires_at"]:
-            return False
-        if entry["otp"] != otp.strip():
-            return False
-        entry["verified"] = True
-        entry["verified_at"] = time.time()
-        return True
-
+    return otp_service.verify_otp(scope, identifier, otp)
 
 def _check_reset_allowed(scope: str, identifier: str) -> str | None:
-    """Return stored email if OTP was verified and reset window is still open."""
-    key = _make_key(scope, identifier)
-    with _otp_lock:
-        entry = _otp_store.get(key)
-        if not entry or not entry["verified"]:
-            return None
-        if time.time() > (entry["verified_at"] or 0) + _RESET_TTL:
-            return None
-        return entry["email"]
-
+    return otp_service.check_verified(scope, identifier, ttl=otp_service.RESET_TTL)
 
 def _clear_otp(scope: str, identifier: str) -> None:
-    with _otp_lock:
-        _otp_store.pop(_make_key(scope, identifier), None)
+    otp_service.clear_otp(scope, identifier)
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +64,90 @@ def _normalize_customer_email(email: str) -> str:
     return email.strip().lower()
 
 
+class GuestRegisterRequest(BaseModel):
+    """Body for POST /auth/customer/register-guest (guest checkout, no OTP)."""
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    phone: str | None = Field(default=None, max_length=64)
+
+
+@router.post("/customer/register-guest", response_model=CustomerAuthResponse)
+def customer_register_guest(body: GuestRegisterRequest, db: DbSession) -> CustomerAuthResponse:
+    """Register from guest checkout — no OTP required.
+
+    Checks email AND phone uniqueness before creating the account and returns
+    structured ``field_errors`` so the checkout UI can show per-field messages.
+    """
+    email_n = _normalize_customer_email(str(body.email))
+    phone_n = str(body.phone or "").strip()
+
+    field_errors: dict[str, str] = {}
+
+    if db.query(CustomerUser).filter(CustomerUser.email == email_n).one_or_none():
+        field_errors["email"] = "Email already exists. Login to continue."
+
+    if phone_n:
+        phone_taken = (
+            db.query(CustomerUser.id)
+            .filter(CustomerUser.phone == phone_n)
+            .first()
+        )
+        if phone_taken:
+            field_errors["phone"] = "Phone number is already linked to an account. Please login to continue."
+
+    if field_errors:
+        raise HTTPException(
+            status_code=422,
+            detail={"field_errors": field_errors},
+        )
+
+    user = CustomerUser(
+        email=email_n,
+        password_hash=hash_password(body.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    token = create_access_token({"role": "customer", "sub": user.id, "email": user.email})
+    from app.services.email_service import send_welcome_email
+    send_welcome_email(user.email, "")
+    return CustomerAuthResponse(
+        access_token=token,
+        member_id=user.id,
+        email=user.email,
+        profile_completed=user.profile_completed,
+        full_name=user.full_name or "",
+        phone=user.phone or "",
+        address=user.address_line or "",
+    )
+
+
+class CheckAvailabilityRequest(BaseModel):
+    email: EmailStr | None = None
+    phone: str | None = None
+
+
+@router.post("/customer/check-availability")
+def customer_check_availability(body: CheckAvailabilityRequest, db: DbSession) -> dict:
+    """Check whether an email or phone is already registered.
+
+    Used for real-time inline validation in the guest checkout form.
+    Returns ``{"email_taken": bool, "phone_taken": bool}`` (keys omitted when not queried).
+    """
+    result: dict = {}
+    if body.email:
+        email_n = _normalize_customer_email(str(body.email))
+        result["email_taken"] = (
+            db.query(CustomerUser.id).filter(CustomerUser.email == email_n).first() is not None
+        )
+    if body.phone:
+        phone_n = str(body.phone).strip()
+        result["phone_taken"] = (
+            db.query(CustomerUser.id).filter(CustomerUser.phone == phone_n).first() is not None
+        )
+    return result
+
+
 @router.post("/customer/register", response_model=CustomerAuthResponse)
 def customer_register(body: CustomerRegisterRequest, db: DbSession) -> CustomerAuthResponse:
     email_n = _normalize_customer_email(str(body.email))
@@ -119,6 +157,16 @@ def customer_register(body: CustomerRegisterRequest, db: DbSession) -> CustomerA
             status_code=409,
             detail={"detail": "Email already registered", "code": "email_taken"},
         )
+    # Require prior email OTP verification before creating the account.
+    verified_email = otp_service.check_verified("signup", email_n, ttl=otp_service.SIGNUP_TTL)
+    if not verified_email:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "detail": "Email not verified. Please verify your email with the code sent to you.",
+                "code": "email_not_verified",
+            },
+        )
     user = CustomerUser(
         email=email_n,
         password_hash=hash_password(body.password),
@@ -126,6 +174,7 @@ def customer_register(body: CustomerRegisterRequest, db: DbSession) -> CustomerA
     db.add(user)
     db.commit()
     db.refresh(user)
+    otp_service.clear_otp("signup", email_n)
     token = create_access_token({"role": "customer", "sub": user.id, "email": user.email})
     from app.services.email_service import send_welcome_email
     send_welcome_email(user.email, user.full_name or "")
@@ -375,6 +424,110 @@ def mobile_washer_login(body: MobileWasherLoginRequest, db: DbSession) -> Mobile
         service_pin_code=str(w.service_pin_code or ""),
         serviceable_zip_codes=[str(z).strip() for z in loads_json_array(w.serviceable_zip_codes_json) if str(z).strip()],
     )
+
+
+# ---------------------------------------------------------------------------
+# Signup email verification (OTP sent before account creation)
+# ---------------------------------------------------------------------------
+
+class SignupOtpRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/customer/send-signup-otp")
+def customer_send_signup_otp(body: SignupOtpRequest, db: DbSession) -> dict:
+    """Send a 6-digit verification code to the supplied email.
+
+    Returns success even if the email is already registered so the response
+    cannot be used to enumerate existing accounts — the register endpoint
+    will surface the conflict at creation time.
+    """
+    email_n = _normalize_customer_email(str(body.email))
+    # Check availability early and give a clear error (better UX than waiting
+    # until register), but do NOT reveal whether an account exists to strangers
+    # — keep the message generic.
+    existing = db.query(CustomerUser).filter(CustomerUser.email == email_n).one_or_none()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={"detail": "Email already linked to another account", "code": "email_taken"},
+        )
+    otp = otp_service.store_otp("signup", email_n, email_n)
+    logger.info("[SignupOtp] OTP generated for %s", email_n)
+    from app.services.email_service import send_signup_otp_email
+    send_signup_otp_email(email_n, otp)
+    return {"message": "Verification code sent to your email."}
+
+
+@router.post("/customer/verify-signup-otp")
+def customer_verify_signup_otp(body: VerifyOtpRequest) -> dict:
+    identifier = body.identifier.strip().lower()
+    if not otp_service.verify_otp("signup", identifier, body.otp):
+        raise HTTPException(
+            status_code=400,
+            detail={"detail": "Invalid or expired code. Please try again.", "code": "invalid_otp"},
+        )
+    return {"message": "Email verified."}
+
+
+# ---------------------------------------------------------------------------
+# Email change verification (authenticated — requires valid customer token)
+# ---------------------------------------------------------------------------
+
+class EmailChangeOtpRequest(BaseModel):
+    new_email: EmailStr
+
+
+@router.post("/customer/request-email-change")
+def customer_request_email_change(
+    body: EmailChangeOtpRequest, db: DbSession, auth: CustomerAuth
+) -> dict:
+    """Send a verification OTP to the *new* email address.
+
+    The new email must not be taken by another account.  The current email
+    remains unchanged until the OTP is verified and the profile is saved.
+    """
+    customer_id = str(auth["sub"])
+    new_email_n = _normalize_customer_email(str(body.new_email))
+
+    # Prevent claiming an email that belongs to someone else.
+    taken = (
+        db.query(CustomerUser.id)
+        .filter(CustomerUser.email == new_email_n, CustomerUser.id != customer_id)
+        .first()
+    )
+    if taken:
+        raise HTTPException(
+            status_code=409,
+            detail={"detail": "Email already linked to another account", "code": "email_taken"},
+        )
+
+    u = db.query(CustomerUser).filter(CustomerUser.id == customer_id).one_or_none()
+    otp = otp_service.store_otp("email_change", new_email_n, new_email_n)
+    logger.info("[EmailChangeOtp] OTP generated for customer %s → new email %s", customer_id, new_email_n)
+    from app.services.email_service import send_email_change_otp_email
+    send_email_change_otp_email(new_email_n, u.full_name if u else "", otp)
+    return {"message": "Verification code sent to your new email address."}
+
+
+@router.post("/customer/verify-email-change")
+def customer_verify_email_change(body: VerifyOtpRequest, auth: CustomerAuth) -> dict:
+    customer_id = str(auth["sub"])
+    new_email_n = body.identifier.strip().lower()
+    if not otp_service.verify_otp("email_change", new_email_n, body.otp):
+        raise HTTPException(
+            status_code=400,
+            detail={"detail": "Invalid or expired code. Please try again.", "code": "invalid_otp"},
+        )
+    # Issue a short-lived signed token that patch_profile can verify without
+    # touching shared state.  This makes the email-change flow work correctly
+    # across multiple gunicorn workers / Azure App Service instances.
+    from datetime import timedelta
+    verification_token = create_access_token(
+        {"purpose": "email_change", "new_email": new_email_n, "sub": customer_id},
+        expires_delta=timedelta(minutes=15),
+    )
+    return {"message": "New email address verified.", "email_change_token": verification_token}
 
 
 # ---------------------------------------------------------------------------

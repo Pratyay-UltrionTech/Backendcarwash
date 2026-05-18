@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, new_id
@@ -35,3 +35,23 @@ class LoyaltyLedgerEntry(Base):
     service_id: Mapped[str] = mapped_column(String(36), nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LoyaltyReward(Base):
+    """One row per loyalty reward granted to a registered customer. Redeemed once."""
+
+    __tablename__ = "loyalty_rewards"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)          # branch | mobile
+    branch_id: Mapped[str | None] = mapped_column(String(36), nullable=True)   # branch rewards only
+    city_pin_code: Mapped[str | None] = mapped_column(String(16), nullable=True)  # mobile rewards only
+    tier_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reward_service_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    reward_service_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")  # pending | redeemed
+    email_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    redeemed_booking_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

@@ -25,6 +25,7 @@ class BookingCreate(BaseModel):
     """Optional client-generated id so the portal can sync without replacing booking keys."""
     booking_id: str | None = None
     customer_id: str | None = None
+    loyalty_reward_id: str | None = None
 
     @field_validator("customer_name", "phone", "vehicle_type", "service_summary", "slot_date", "start_time")
     @classmethod

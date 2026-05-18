@@ -393,6 +393,24 @@ def _backfill_loyalty_ledger_customer_ids() -> None:
         db.close()
 
 
+def _ensure_loyalty_rewards_table() -> None:
+    """Create the loyalty_rewards table if it does not exist yet."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("loyalty_rewards"):
+        from app.models.loyalty import LoyaltyReward  # noqa: F401
+        LoyaltyReward.__table__.create(engine)
+        _log.info("Created loyalty_rewards table")
+    else:
+        # Ensure email_sent column exists (backwards compat)
+        cols = {c["name"] for c in insp.get_columns("loyalty_rewards")}
+        if "email_sent" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE loyalty_rewards ADD COLUMN email_sent BOOLEAN NOT NULL DEFAULT FALSE"))
+            _log.info("Added email_sent column to loyalty_rewards")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     import app.models  # noqa: F401 — register ORM mappers
@@ -422,6 +440,7 @@ async def lifespan(_app: FastAPI):
         _ensure_washer_unavailability_table()
         _ensure_user_addresses_table()
         _backfill_loyalty_ledger_customer_ids()
+        _ensure_loyalty_rewards_table()
     except OperationalError as e:
         _log.error("PostgreSQL connection failed: %s", e)
         _log.error(

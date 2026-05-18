@@ -146,26 +146,141 @@ def send_booking_rescheduled_email(
     _send(to_email, "Your Car Wash Appointment Has Been Rescheduled", plain, html)
 
 
+def _otp_block(otp: str) -> str:
+    """Reusable HTML block that displays the OTP code prominently."""
+    return (
+        f'<div style="margin:28px 0;text-align:center">'
+        f'<span style="display:inline-block;background:#f3f4f6;border:2px dashed #d1d5db;'
+        f'border-radius:12px;padding:18px 40px;font-size:36px;font-weight:700;'
+        f'letter-spacing:10px;color:#1e293b">{otp}</span></div>'
+    )
+
+
 def send_otp_email(to_email: str, name: str, otp: str) -> None:
+    """Password-reset OTP — only used by the forgot-password flow."""
     display = name.strip() if name and name.strip() else "there"
     plain = (
         f"Hi {display},\n\n"
         f"Your CarWash password reset code is: {otp}\n\n"
-        "This code expires in 10 minutes. If you did not request a password reset, please ignore this email."
+        "This code expires in 10 minutes.\n"
+        "If you did not request a password reset, please ignore this email."
     )
     html = f"""
 <html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:auto;padding:24px">
 <h2 style="color:#4F46E5;margin-bottom:8px">Password Reset Code</h2>
 <p>Hi {display},</p>
 <p>Use the code below to reset your CarWash password. It expires in <strong>10 minutes</strong>.</p>
-<div style="margin:28px 0;text-align:center">
-  <span style="display:inline-block;background:#f3f4f6;border:2px dashed #d1d5db;border-radius:12px;padding:18px 40px;font-size:36px;font-weight:700;letter-spacing:10px;color:#1e293b">{otp}</span>
-</div>
+{_otp_block(otp)}
 <p style="color:#6b7280;font-size:14px">If you did not request a password reset, you can safely ignore this email.</p>
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
 <p style="color:#9ca3af;font-size:12px">This is an automated message, please do not reply.</p>
 </body></html>"""
     _send(to_email, "Your CarWash Password Reset Code", plain, html, dev_otp=otp)
+
+
+def send_signup_otp_email(to_email: str, otp: str) -> None:
+    """Account-creation OTP — sent during the signup email-verification step."""
+    plain = (
+        f"Welcome to CarWash!\n\n"
+        f"Your verification code is: {otp}\n\n"
+        "Use this code to verify your email address and complete account creation.\n"
+        "The code expires in 10 minutes.\n\n"
+        "If you did not create a CarWash account, you can safely ignore this email."
+    )
+    html = f"""
+<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:auto;padding:24px">
+<h2 style="color:#0c1d3a;margin-bottom:8px">Verify Your CarWash Account</h2>
+<p>Thanks for signing up! Enter the code below to verify your email address and complete your account creation.</p>
+{_otp_block(otp)}
+<p style="color:#6b7280;font-size:14px">This code expires in <strong>10 minutes</strong>.</p>
+<p style="color:#6b7280;font-size:14px">If you did not sign up for CarWash, you can safely ignore this email.</p>
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
+<p style="color:#9ca3af;font-size:12px">This is an automated message, please do not reply.</p>
+</body></html>"""
+    _send(to_email, "Verify Your CarWash Account", plain, html, dev_otp=otp)
+
+
+def send_email_change_otp_email(to_email: str, name: str, otp: str) -> None:
+    """Email-change OTP — sent to the *new* address to confirm ownership."""
+    display = name.strip() if name and name.strip() else "there"
+    plain = (
+        f"Hi {display},\n\n"
+        f"Your CarWash email change verification code is: {otp}\n\n"
+        "Use this code to verify your new email address. It expires in 10 minutes.\n\n"
+        "If you did not request an email address change, please ignore this email "
+        "and your current email will remain unchanged."
+    )
+    html = f"""
+<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:auto;padding:24px">
+<h2 style="color:#0c1d3a;margin-bottom:8px">Verify Your New Email Address</h2>
+<p>Hi {display},</p>
+<p>Use the code below to confirm your new email address for your CarWash account. It expires in <strong>10 minutes</strong>.</p>
+{_otp_block(otp)}
+<p style="color:#6b7280;font-size:14px">If you did not request this change, you can safely ignore this email — your current email address will remain unchanged.</p>
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
+<p style="color:#9ca3af;font-size:12px">This is an automated message, please do not reply.</p>
+</body></html>"""
+    _send(to_email, "Verify Your New CarWash Email Address", plain, html, dev_otp=otp)
+
+
+def send_loyalty_reward_email(
+    to_email: str,
+    name: str,
+    service_name: str,
+    channel: str = "branch",
+) -> None:
+    """Dedicated loyalty reward unlock email — not a generic booking email."""
+    display = name.strip() if name and name.strip() else "Valued Customer"
+    channel_label = "at our branch" if channel == "branch" else "via our mobile service"
+    channel_badge = "Branch Service" if channel == "branch" else "Mobile Service"
+    plain = (
+        f"Congratulations, {display}!\n\n"
+        f"You've earned a FREE loyalty reward: {service_name}!\n\n"
+        f"This reward is now available in your Coonara Hand Car Wash account.\n"
+        f"On your next eligible booking {channel_label}, simply select '{service_name}' "
+        f"and the price will automatically display as $0.00 — no coupon code needed.\n\n"
+        "Your reward can only be redeemed once, so make it count!\n\n"
+        "Thank you for being a loyal Coonara customer.\n\n"
+        "— The Coonara Hand Car Wash Team"
+    )
+    html = f"""
+<html><body style="font-family:Arial,sans-serif;color:#1a1a1a;max-width:600px;margin:auto;padding:0">
+  <div style="background:#0c1d3a;padding:28px 32px 20px">
+    <h1 style="color:#c9a84c;margin:0;font-size:22px;letter-spacing:0.5px">Coonara Hand Car Wash</h1>
+    <p style="color:#8fa8c8;margin:6px 0 0;font-size:13px">Loyalty Rewards</p>
+  </div>
+  <div style="padding:32px 32px 24px;background:#ffffff">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:48px;margin-bottom:8px">🏆</div>
+      <h2 style="color:#0c1d3a;margin:0 0 6px;font-size:24px">Congratulations, {display}!</h2>
+      <p style="color:#4b5563;margin:0;font-size:15px">You've unlocked a free loyalty reward</p>
+    </div>
+    <div style="background:#fefce8;border:2px solid #c9a84c;border-radius:12px;padding:20px 24px;text-align:center;margin-bottom:24px">
+      <p style="color:#92400e;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Your Free Reward</p>
+      <p style="color:#0c1d3a;font-size:22px;font-weight:700;margin:0 0 6px">{service_name}</p>
+      <span style="display:inline-block;background:#0c1d3a;color:#c9a84c;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;letter-spacing:0.5px">{channel_badge}</span>
+    </div>
+    <div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:4px;padding:16px 20px;margin-bottom:24px">
+      <p style="color:#15803d;font-weight:600;margin:0 0 6px;font-size:14px">How to redeem</p>
+      <ol style="color:#166534;margin:0;padding-left:18px;font-size:14px;line-height:1.8">
+        <li>Log in to your Coonara account</li>
+        <li>Book a service {channel_label}</li>
+        <li>Select <strong>{service_name}</strong> — the price will automatically show <strong>$0.00</strong></li>
+        <li>Complete your booking — reward consumed!</li>
+      </ol>
+    </div>
+    <p style="color:#6b7280;font-size:13px;line-height:1.6;margin:0">
+      This is a <strong>one-time reward</strong>. After redemption, your loyalty counter resets and
+      you'll start earning toward your next reward automatically.
+    </p>
+  </div>
+  <div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #e5e7eb">
+    <p style="color:#9ca3af;font-size:12px;margin:0;text-align:center">
+      This is an automated message from Coonara Hand Car Wash. Please do not reply.
+    </p>
+  </div>
+</body></html>"""
+    _send(to_email, "🏆 You've Earned a Free Reward! — Coonara Hand Car Wash", plain, html)
 
 
 def lookup_customer_email(db, customer_id: str | None, phone: str | None) -> tuple[str | None, str | None]:

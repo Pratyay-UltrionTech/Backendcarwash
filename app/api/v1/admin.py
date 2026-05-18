@@ -1982,18 +1982,33 @@ def list_customers(
         ]
 
     # ── Sort ──
+    # For multi-key sorts that mix ascending/descending directions we use Python's
+    # stable-sort guarantee: sort by the secondary key first (name A→Z), then by
+    # the primary key.  Equal primary keys keep the secondary order intact.
     if sort_by == "name_asc":
         customers.sort(key=lambda c: (c["name"] or "").lower())
     elif sort_by == "name_desc":
         customers.sort(key=lambda c: (c["name"] or "").lower(), reverse=True)
     elif sort_by == "oldest_booking":
-        customers.sort(key=lambda c: (c["last_booking_date"] or "9999-99-99", (c["name"] or "").lower()))
+        # Oldest last-booking date first (ascending); no-booking customers at the end.
+        customers.sort(key=lambda c: (c["name"] or "").lower())  # secondary: name A→Z
+        customers.sort(key=lambda c: c["last_booking_date"] or "9999-99-99")
     elif sort_by == "most_bookings":
+        # Negating count keeps the primary descending while name stays ascending.
         customers.sort(key=lambda c: (-c["total_booking_count"], (c["name"] or "").lower()))
     elif sort_by == "latest_created":
-        customers.sort(key=lambda c: (c["created_at"] or c["last_booking_date"] or "0000-00-00"), reverse=True)
+        # Newest first; accounts use created_at, guests fall back to last_booking_date.
+        # Slice to 10 chars so ISO datetime strings ("2024-01-15T…") compare correctly
+        # with plain date strings ("2024-01-15").
+        customers.sort(key=lambda c: (c["name"] or "").lower())  # secondary: name A→Z
+        customers.sort(
+            key=lambda c: (c["created_at"] or c["last_booking_date"] or "")[:10],
+            reverse=True,
+        )
     else:  # recent_booking (default)
-        customers.sort(key=lambda c: (c["last_booking_date"] or "0000-00-00", (c["name"] or "").lower()), reverse=True)
+        # Most-recent last-booking date first; ties broken by name A→Z.
+        customers.sort(key=lambda c: (c["name"] or "").lower())  # secondary: name A→Z
+        customers.sort(key=lambda c: c["last_booking_date"] or "0000-00-00", reverse=True)
 
     total = len(customers)
     start = (page - 1) * per_page

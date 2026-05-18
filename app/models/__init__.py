@@ -3,7 +3,7 @@ from app.models.branch import Branch
 from app.models.staff import BranchManager, Washer, WasherUnavailability, WasherLeaveRequest
 from app.models.catalog import VehicleCatalogBlock, CatalogServiceItem, CatalogAddonItem, BranchAddonItem
 from app.models.promotion import Promotion, DayTimePriceRule, FreeCoffeeRule
-from app.models.loyalty import BranchLoyalty, LoyaltyLedgerEntry
+from app.models.loyalty import BranchLoyalty, LoyaltyLedgerEntry, LoyaltyReward
 from app.models.slot_settings import BranchSlotSettings
 from app.models.booking import BranchBooking
 from app.models.customer import CustomerUser
@@ -40,6 +40,7 @@ __all__ = [
     "FreeCoffeeRule",
     "BranchLoyalty",
     "LoyaltyLedgerEntry",
+    "LoyaltyReward",
     "BranchSlotSettings",
     "BranchBooking",
     "CustomerUser",

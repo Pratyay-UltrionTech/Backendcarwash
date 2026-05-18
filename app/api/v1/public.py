@@ -278,6 +278,11 @@ def create_online_booking(
             from app.services import customer_service
             customer_service.record_customer_vehicle(db, str(auth["sub"]), body.vehicle_type, body.vehicle_model)
 
+        # Consume loyalty reward if one was applied for this booking
+        if body.loyalty_reward_id and auth and auth.get("sub"):
+            from app.services.loyalty_service import consume_reward
+            consume_reward(db, body.loyalty_reward_id, str(auth["sub"]), job.id)
+
         db.commit()
         audit_log(
             "customer_public",

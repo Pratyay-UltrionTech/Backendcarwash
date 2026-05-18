@@ -199,6 +199,7 @@ class MobileBookingCreate(BaseModel):
     assigned_driver_id: str | None = None
     booking_id: str | None = None
     customer_id: str | None = None
+    loyalty_reward_id: str | None = None
 
 
 class MobileBookingUpdate(BaseModel):
