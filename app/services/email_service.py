@@ -162,7 +162,7 @@ def _compute_duration_label(start: str, end: str) -> str:
 
 _LUMI_WEBSITE = "https://www.lumicarspa.com.au"
 _LUMI_PORTAL  = "https://www.lumicarspa.com.au/#/home"
-_LUMI_PHONE   = "(02) 9894 2838"
+_LUMI_PHONE   = "+61 449 957 777"
 
 
 def send_booking_confirmed_email(
