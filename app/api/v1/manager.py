@@ -170,6 +170,8 @@ def create_walk_in(db: DbSession, manager: ManagerUser, body: BookingCreate, req
     db.refresh(job)
     from app.services.email_service import lookup_customer_email, send_booking_confirmed_email, send_staff_booking_notification
     cust_email, cust_name = lookup_customer_email(db, job.customer_id, job.phone)
+    if not cust_email:
+        cust_email = (getattr(job, "customer_email", None) or "").strip() or None
     if cust_email:
         send_booking_confirmed_email(
             to_email=cust_email,
@@ -277,6 +279,8 @@ def patch_booking(
             from app.services.email_service import lookup_customer_email, send_booking_rescheduled_email, send_staff_booking_notification
 
             cust_email, cust_name = lookup_customer_email(db, job.customer_id, job.phone)
+            if not cust_email:
+                cust_email = (getattr(job, "customer_email", None) or "").strip() or None
             if cust_email:
                 send_booking_rescheduled_email(
                     to_email=cust_email,

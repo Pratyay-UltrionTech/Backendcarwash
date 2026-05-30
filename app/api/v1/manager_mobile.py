@@ -313,6 +313,8 @@ def create_booking(
     action_log("manager_mobile_create_booking", "success", request, booking_id=row.id, latency_ms=round(monotonic_ms() - started, 2))
     from app.services.email_service import lookup_customer_email, send_booking_confirmed_email, send_staff_booking_notification
     cust_email, cust_name = lookup_customer_email(db, row.customer_id, row.phone)
+    if not cust_email:
+        cust_email = (getattr(row, "customer_email", None) or "").strip() or None
     if cust_email:
         send_booking_confirmed_email(
             to_email=cust_email,
@@ -524,6 +526,8 @@ def patch_booking(
     if (row.slot_date, row.start_time, row.end_time) != old_slot:
         from app.services.email_service import lookup_customer_email, send_booking_rescheduled_email, send_staff_booking_notification
         cust_email, cust_name = lookup_customer_email(db, row.customer_id, row.phone)
+        if not cust_email:
+            cust_email = (getattr(row, "customer_email", None) or "").strip() or None
         if cust_email:
             send_booking_rescheduled_email(
                 to_email=cust_email,
