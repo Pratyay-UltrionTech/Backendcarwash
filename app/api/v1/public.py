@@ -286,6 +286,7 @@ def create_online_booking(
             booking_id=body.booking_id,
             customer_id=str(auth["sub"]) if auth and auth.get("sub") else None,
             promo_code=body.promo_code,
+            payment_method=body.payment_method,
         )
 
         if auth and auth.get("sub"):
@@ -358,6 +359,7 @@ def create_online_booking(
             phone=job.phone or None,
             end_time=job.end_time or None,
             channel="branch",
+            payment_method=getattr(job, "payment_method", None),
         )
     elif (getattr(job, "customer_email", None) or "").strip():
         send_booking_confirmed_email(
@@ -371,6 +373,7 @@ def create_online_booking(
             phone=job.phone or None,
             end_time=job.end_time or None,
             channel="branch",
+            payment_method=getattr(job, "payment_method", None),
         )
     send_staff_booking_notification(
         db,
@@ -388,6 +391,7 @@ def create_online_booking(
         end_time=job.end_time,
         branch_id=str(job.branch_id),
         customer_id=str(job.customer_id) if job.customer_id else None,
+        payment_method=getattr(job, "payment_method", None),
     )
     return booking_to_dict(job)
 

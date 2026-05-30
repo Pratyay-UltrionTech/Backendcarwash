@@ -325,6 +325,7 @@ def create_booking(
             phone=row.phone or None,
             end_time=row.end_time or None,
             channel="mobile",
+            payment_method=getattr(row, "payment_method", None),
         )
     send_staff_booking_notification(
         db,
@@ -342,6 +343,7 @@ def create_booking(
         end_time=row.end_time,
         city_pin_code=str(row.city_pin_code),
         customer_id=str(row.customer_id) if row.customer_id else None,
+        payment_method=getattr(row, "payment_method", None),
     )
     return _booking_to_dict(row)
 
@@ -553,6 +555,7 @@ def patch_booking(
             old_slot_date=old_slot[0],
             old_start_time=old_slot[1],
             customer_id=str(row.customer_id) if row.customer_id else None,
+            payment_method=getattr(row, "payment_method", None),
         )
     return _booking_to_dict(row)
 

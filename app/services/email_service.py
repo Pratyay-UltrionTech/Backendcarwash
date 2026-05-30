@@ -60,23 +60,86 @@ def _send(to_email: str, subject: str, plain: str, html: str, dev_otp: str | Non
 
 
 def send_welcome_email(to_email: str, name: str) -> None:
-    display = name.strip() if name and name.strip() else "Valued Customer"
+    raw = name.strip() if name and name.strip() else ""
+    first_name = raw.split()[0] if raw else "there"
     plain = (
-        f"Welcome to CarWash App, {display}!\n\n"
-        "Your account has been created successfully. "
-        "You can now book car wash appointments any time through the portal.\n\n"
-        "Thank you for joining us!"
+        f"Hi {first_name},\n\n"
+        "Welcome to the Lumi Car Spa family! 🎉\n\n"
+        "Your membership is confirmed and you're all set.\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "YOUR MEMBER BENEFITS\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "☕  Free coffee on every visit\n"
+        "🚗  Every 10th wash FREE\n"
+        "📱  Easy online booking anytime\n"
+        "🌿  Eco-safe & car-safe products\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "READY FOR YOUR FIRST WASH?\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "We're open 7 days, 9am–5pm.\n"
+        "Just walk in or book online at lumicarspa.com.au\n\n"
+        "We're a community car wash under new management and we're committed to giving "
+        "your car the premium care it deserves — every single visit.\n\n"
+        "If you have any questions, we're always happy to help.\n\n"
+        "📍 16/35 Coonara Ave, West Pennant Hills NSW 2125\n"
+        "📞 0449 957 777\n"
+        "✉  lumicarspa@gmail.com\n"
+        "🌐  www.lumicarspa.com.au\n\n"
+        "See you soon,\n"
+        "The Lumi Car Spa Team"
     )
     html = f"""
-<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:auto;padding:24px">
-<h2 style="color:#2563eb;margin-bottom:8px">Welcome to CarWash App!</h2>
-<p>Hi {display},</p>
-<p>Your account has been created successfully. You can now book car wash appointments any time through the portal.</p>
-<p style="margin-top:24px">Thank you for joining us — we look forward to keeping your car sparkling!</p>
-<hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
-<p style="color:#9ca3af;font-size:12px">This is an automated message, please do not reply.</p>
+<html><body style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:640px;margin:0 auto;padding:0;line-height:1.65;font-size:15px">
+
+  <!-- Header -->
+  <div style="background:#0c1d3a;padding:28px 32px 22px">
+    <p style="color:#c9a84c;margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase">Lumi Car Spa</p>
+    <p style="color:#fff;margin:0;font-size:22px;font-weight:700">Welcome to the family! &#x1F389;</p>
+  </div>
+
+  <!-- Body -->
+  <div style="padding:28px 32px 8px;background:#fff">
+    <p style="margin:0 0 6px">Hi <strong>{first_name}</strong>,</p>
+    <p style="margin:0 0 24px;color:#374151">
+      Your membership is confirmed and you're all set. We're thrilled to have you on board!
+    </p>
+
+    <!-- Benefits -->
+    <div style="background:#f8f6f1;border-radius:10px;padding:20px 24px;margin-bottom:24px">
+      <p style="margin:0 0 14px;font-size:12px;font-weight:700;color:#0c1d3a;letter-spacing:2px;text-transform:uppercase">Your Member Benefits</p>
+      <table style="border-collapse:collapse;width:100%;font-size:14px">
+        <tr><td style="padding:7px 0;vertical-align:top;width:28px">&#x2615;</td><td style="padding:7px 0;color:#374151">Free coffee on every visit</td></tr>
+        <tr><td style="padding:7px 0;vertical-align:top">&#x1F697;</td><td style="padding:7px 0;color:#374151">Every 10th wash <strong>FREE</strong></td></tr>
+        <tr><td style="padding:7px 0;vertical-align:top">&#x1F4F1;</td><td style="padding:7px 0;color:#374151">Easy online booking anytime</td></tr>
+        <tr><td style="padding:7px 0;vertical-align:top">&#x1F33F;</td><td style="padding:7px 0;color:#374151">Eco-safe &amp; car-safe products</td></tr>
+      </table>
+    </div>
+
+    <!-- CTA -->
+    <div style="background:#0c1d3a;border-radius:10px;padding:20px 24px;margin-bottom:24px;text-align:center">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#c9a84c;letter-spacing:2px;text-transform:uppercase">Ready for Your First Wash?</p>
+      <p style="margin:0 0 14px;color:#e5e7eb;font-size:14px">We're open 7 days, 9am–5pm. Walk in or book online.</p>
+      <a href="{_LUMI_PORTAL}" style="display:inline-block;background:#c9a84c;color:#0c1d3a;padding:11px 28px;border-radius:7px;font-weight:700;font-size:14px;text-decoration:none">Book Online</a>
+    </div>
+
+    <p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.65">
+      We're a community car wash under new management and we're committed to giving your car
+      the premium care it deserves &mdash; every single visit. If you have any questions,
+      we're always happy to help.
+    </p>
+  </div>
+
+  <!-- Footer -->
+  <div style="background:#f9fafb;padding:22px 32px;border-top:1px solid #e5e7eb">
+    <p style="margin:0 0 10px;font-size:13px;color:#374151;font-weight:600;text-align:center">See you soon,<br>The Lumi Car Spa Team</p>
+    <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-align:center">&#x1F4CD; 16/35 Coonara Ave, West Pennant Hills NSW 2125</p>
+    <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-align:center">&#x1F4DE; 0449 957 777 &nbsp;&bull;&nbsp; &#x2709; lumicarspa@gmail.com</p>
+    <p style="margin:0 0 14px;font-size:12px;color:#6b7280;text-align:center">&#x1F310; <a href="{_LUMI_WEBSITE}" style="color:#0c1d3a">www.lumicarspa.com.au</a></p>
+    <p style="color:#9ca3af;font-size:11px;margin:0;text-align:center">This is an automated message &mdash; please do not reply directly to this email.</p>
+  </div>
+
 </body></html>"""
-    _send(to_email, "Welcome to CarWash App!", plain, html)
+    _send(to_email, "Welcome to Lumi Car Spa – You’re officially a member! \U0001f697✨", plain, html)
 
 
 def _escape(text: str) -> str:
@@ -176,6 +239,7 @@ def send_booking_confirmed_email(
     phone: str | None = None,
     end_time: str | None = None,
     channel: str = "branch",
+    payment_method: str | None = None,
 ) -> None:
     display = name.strip() if name and name.strip() else "Valued Customer"
     first_name = _display_first_name(display)
@@ -209,6 +273,30 @@ def send_booking_confirmed_email(
         f'</tr>'
     ) if duration_label else ""
 
+    # Format payment method for display
+    _pm_raw = (payment_method or "").strip().lower()
+    _pm_labels = {
+        # Frontend values (from PaymentPage)
+        "later": "Pay After Service",
+        "card": "Credit / Debit Card",
+        "apple": "Apple Pay",
+        # Legacy / manager-created booking values
+        "cash": "Cash",
+        "credit_card": "Credit Card",
+        "debit_card": "Debit Card",
+        "eftpos": "EFTPOS",
+        "online": "Online",
+        "bank_transfer": "Bank Transfer",
+    }
+    payment_display = _pm_labels.get(_pm_raw, _pm_raw.replace("_", " ").title()) if _pm_raw else "—"
+    payment_row_plain = f"  Payment:      {payment_display}\n"
+    payment_row_html = (
+        f'<tr>'
+        f'<td style="padding:11px 18px;background:#f9fafb;font-weight:600;border-bottom:1px solid #e5e7eb;white-space:nowrap;width:150px">Payment</td>'
+        f'<td style="padding:11px 18px;border-bottom:1px solid #e5e7eb">{_escape(payment_display)}</td>'
+        f'</tr>'
+    )
+
     expect_plain = "\n".join(f"  •  {pt}" for pt in what_to_expect)
     expect_html  = "\n".join(
         f'<li style="margin-bottom:8px;color:#374151">{_escape(pt)}</li>'
@@ -228,6 +316,7 @@ def send_booking_confirmed_email(
         f"  Time:         {time_display}\n"
         f"  Service:      {service_display}\n"
         f"  Booking ID:   {ref}\n"
+        f"{payment_row_plain}"
         f"{duration_row_plain}"
         "\n────────────────────────────────────\n"
         "📍 What to Expect\n"
@@ -282,6 +371,7 @@ def send_booking_confirmed_email(
         <td style="padding:11px 18px;background:#f9fafb;font-weight:600;border-bottom:1px solid #e5e7eb;white-space:nowrap">Booking ID</td>
         <td style="padding:11px 18px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:13px;color:#0c1d3a">{_escape(ref)}</td>
       </tr>
+      {payment_row_html}
       {duration_row_html}
     </table>
 
@@ -471,23 +561,127 @@ def send_otp_email(to_email: str, name: str, otp: str) -> None:
 def send_signup_otp_email(to_email: str, otp: str) -> None:
     """Account-creation OTP — sent during the signup email-verification step."""
     plain = (
-        f"Welcome to CarWash!\n\n"
-        f"Your verification code is: {otp}\n\n"
-        "Use this code to verify your email address and complete account creation.\n"
-        "The code expires in 10 minutes.\n\n"
-        "If you did not create a CarWash account, you can safely ignore this email."
+        "Hi there,\n\n"
+        "Welcome to Lumi Car Spa! 🚗✨\n\n"
+        f"Your one-time verification code is:\n\n"
+        f"  [ {otp} ]\n\n"
+        "This code expires in 10 minutes. Please do not share it with anyone.\n\n"
+        "Once verified, you're all set to enjoy:\n"
+        "✔  Free coffee on every visit\n"
+        "✔  Your 10th wash FREE\n"
+        "✔  Easy online booking\n\n"
+        "If you didn't request this, you can safely ignore this email.\n\n"
+        "See you soon,\n"
+        "The Lumi Car Spa Team\n\n"
+        "📍 16/35 Coonara Ave, West Pennant Hills\n"
+        "📞 0449 957 777\n"
+        "lumicarspa.com.au"
     )
     html = f"""
-<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:auto;padding:24px">
-<h2 style="color:#0c1d3a;margin-bottom:8px">Verify Your CarWash Account</h2>
-<p>Thanks for signing up! Enter the code below to verify your email address and complete your account creation.</p>
-{_otp_block(otp)}
-<p style="color:#6b7280;font-size:14px">This code expires in <strong>10 minutes</strong>.</p>
-<p style="color:#6b7280;font-size:14px">If you did not sign up for CarWash, you can safely ignore this email.</p>
-<hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
-<p style="color:#9ca3af;font-size:12px">This is an automated message, please do not reply.</p>
+<html><body style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:640px;margin:0 auto;padding:0;line-height:1.65;font-size:15px">
+
+  <!-- Header -->
+  <div style="background:#0c1d3a;padding:28px 32px 22px">
+    <p style="color:#c9a84c;margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase">Lumi Car Spa</p>
+    <p style="color:#fff;margin:0;font-size:22px;font-weight:700">Your Verification Code &#x1F697;&#x2728;</p>
+  </div>
+
+  <!-- Body -->
+  <div style="padding:28px 32px 8px;background:#fff">
+    <p style="margin:0 0 6px;font-size:15px">Hi there,</p>
+    <p style="margin:0 0 24px;color:#374151">
+      Welcome to Lumi Car Spa! Enter the code below to verify your email address and complete your membership.
+    </p>
+
+    <!-- OTP block -->
+    <div style="margin:0 0 24px;text-align:center">
+      <span style="display:inline-block;background:#f8f6f1;border:2px solid #c9a84c;border-radius:12px;padding:18px 48px;font-size:40px;font-weight:700;letter-spacing:12px;color:#0c1d3a">{otp}</span>
+    </div>
+
+    <p style="margin:0 0 4px;text-align:center;color:#6b7280;font-size:13px">This code expires in <strong>10 minutes</strong>.</p>
+    <p style="margin:0 0 24px;text-align:center;color:#6b7280;font-size:13px">Please do not share it with anyone.</p>
+
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:0 0 20px">
+
+    <!-- Benefits -->
+    <p style="margin:0 0 10px;font-size:13px;color:#374151">Once verified, you're all set to enjoy:</p>
+    <table style="border-collapse:collapse;width:100%;font-size:14px;margin-bottom:20px">
+      <tr><td style="padding:5px 0;vertical-align:top;width:24px">&#x2714;</td><td style="padding:5px 0;color:#374151">Free coffee on every visit</td></tr>
+      <tr><td style="padding:5px 0;vertical-align:top">&#x2714;</td><td style="padding:5px 0;color:#374151">Your 10th wash <strong>FREE</strong></td></tr>
+      <tr><td style="padding:5px 0;vertical-align:top">&#x2714;</td><td style="padding:5px 0;color:#374151">Easy online booking</td></tr>
+    </table>
+
+    <p style="margin:0 0 8px;color:#9ca3af;font-size:13px">If you didn't request this, you can safely ignore this email.</p>
+  </div>
+
+  <!-- Footer -->
+  <div style="background:#f9fafb;padding:22px 32px;border-top:1px solid #e5e7eb">
+    <p style="margin:0 0 6px;font-size:13px;color:#374151;font-weight:600;text-align:center">See you soon,<br>The Lumi Car Spa Team</p>
+    <p style="margin:8px 0 2px;font-size:12px;color:#6b7280;text-align:center">&#x1F4CD; 16/35 Coonara Ave, West Pennant Hills &nbsp;&bull;&nbsp; &#x1F4DE; 0449 957 777</p>
+    <p style="margin:0 0 14px;font-size:12px;color:#6b7280;text-align:center">
+      <a href="{_LUMI_WEBSITE}" style="color:#0c1d3a">lumicarspa.com.au</a>
+    </p>
+    <p style="color:#9ca3af;font-size:11px;margin:0;text-align:center">This is an automated message &mdash; please do not reply directly to this email.</p>
+  </div>
+
 </body></html>"""
-    _send(to_email, "Verify Your CarWash Account", plain, html, dev_otp=otp)
+    _send(to_email, "Your verification code – Lumi Car Spa", plain, html, dev_otp=otp)
+
+
+def send_admin_invite_otp_email(to_email: str, otp: str) -> None:
+    """Admin-invite OTP — sent when an existing admin adds a new admin account."""
+    plain = (
+        "Hi there,\n\n"
+        "You've been invited to join Lumi Car Spa as an administrator.\n\n"
+        f"Your one-time verification code is:\n\n"
+        f"  [ {otp} ]\n\n"
+        "This code expires in 10 minutes. Please do not share it with anyone.\n\n"
+        "Use this code to complete your admin account setup.\n\n"
+        "If you did not expect this invitation, you can safely ignore this email.\n\n"
+        "The Lumi Car Spa Team\n\n"
+        "📍 16/35 Coonara Ave, West Pennant Hills\n"
+        "📞 0449 957 777\n"
+        "lumicarspa.com.au"
+    )
+    html = f"""
+<html><body style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:640px;margin:0 auto;padding:0;line-height:1.65;font-size:15px">
+
+  <!-- Header -->
+  <div style="background:#0c1d3a;padding:28px 32px 22px">
+    <p style="color:#c9a84c;margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase">Lumi Car Spa &nbsp;&middot;&nbsp; Admin Portal</p>
+    <p style="color:#fff;margin:0;font-size:22px;font-weight:700">Admin Invitation</p>
+  </div>
+
+  <!-- Body -->
+  <div style="padding:28px 32px 8px;background:#fff">
+    <p style="margin:0 0 6px;font-size:15px">Hi there,</p>
+    <p style="margin:0 0 24px;color:#374151">
+      You've been invited to join <strong>Lumi Car Spa</strong> as an administrator.
+      Use the code below to complete your account setup.
+    </p>
+
+    <!-- OTP block -->
+    <div style="margin:0 0 24px;text-align:center">
+      <span style="display:inline-block;background:#f8f6f1;border:2px solid #c9a84c;border-radius:12px;padding:18px 48px;font-size:40px;font-weight:700;letter-spacing:12px;color:#0c1d3a">{otp}</span>
+    </div>
+
+    <p style="margin:0 0 4px;text-align:center;color:#6b7280;font-size:13px">This code expires in <strong>10 minutes</strong>.</p>
+    <p style="margin:0 0 24px;text-align:center;color:#6b7280;font-size:13px">Please do not share it with anyone.</p>
+
+    <div style="background:#fff7ed;border-left:4px solid #f97316;border-radius:4px;padding:14px 18px;margin-bottom:8px">
+      <p style="color:#92400e;margin:0;font-size:13px">If you did not expect this invitation, you can safely ignore this email. No account will be created.</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="background:#f9fafb;padding:22px 32px;border-top:1px solid #e5e7eb">
+    <p style="margin:0 0 6px;font-size:13px;color:#374151;font-weight:600;text-align:center">The Lumi Car Spa Team</p>
+    <p style="margin:4px 0 14px;font-size:12px;color:#6b7280;text-align:center">&#x1F4CD; 16/35 Coonara Ave, West Pennant Hills &nbsp;&bull;&nbsp; &#x1F4DE; 0449 957 777</p>
+    <p style="color:#9ca3af;font-size:11px;margin:0;text-align:center">This is an automated message &mdash; please do not reply directly to this email.</p>
+  </div>
+
+</body></html>"""
+    _send(to_email, "Your admin invitation code – Lumi Car Spa", plain, html, dev_otp=otp)
 
 
 def send_email_change_otp_email(to_email: str, name: str, otp: str) -> None:
@@ -655,6 +849,7 @@ def send_staff_booking_notification(
     old_slot_date: str | None = None,
     old_start_time: str | None = None,
     customer_id: str | None = None,
+    payment_method: str | None = None,
 ) -> None:
     """
     Notify all DB admins and the relevant branch/mobile manager(s) when a booking
@@ -736,6 +931,20 @@ def send_staff_booking_notification(
     cust = (customer_name or "—").strip()
     ph = (phone or "—").strip()
 
+    _pm_raw = (payment_method or "").strip().lower()
+    _pm_labels = {
+        "later": "Pay After Service",
+        "card": "Credit / Debit Card",
+        "apple": "Apple Pay",
+        "cash": "Cash",
+        "credit_card": "Credit Card",
+        "debit_card": "Debit Card",
+        "eftpos": "EFTPOS",
+        "online": "Online",
+        "bank_transfer": "Bank Transfer",
+    }
+    pm_display = _pm_labels.get(_pm_raw, _pm_raw.replace("_", " ").title()) if _pm_raw else "—"
+
     if event == "new_booking":
         subject = f"New Booking — {ref}"
         event_label = "New Booking"
@@ -774,7 +983,8 @@ def send_staff_booking_notification(
         f"{change_block_plain}"
         f"  Date:           {date_display}\n"
         f"  Time:           {time_display} – {end_display}\n"
-        f"  Service:        {svc}\n\n"
+        f"  Service:        {svc}\n"
+        f"  Payment:        {pm_display}\n\n"
         f"  Customer:       {cust}\n"
         f"  Phone:          {ph}\n"
         f"  Vehicle:        {veh}\n"
@@ -808,8 +1018,12 @@ def send_staff_booking_notification(
         <td style="padding:10px 16px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#0c1d3a">{_escape(time_display)} – {_escape(end_display)}</td>
       </tr>
       <tr>
-        <td style="padding:10px 16px;background:#f9fafb;font-weight:600">Service</td>
-        <td style="padding:10px 16px">{_escape(svc)}</td>
+        <td style="padding:10px 16px;background:#f9fafb;font-weight:600;border-bottom:1px solid #e5e7eb">Service</td>
+        <td style="padding:10px 16px;border-bottom:1px solid #e5e7eb">{_escape(svc)}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 16px;background:#f9fafb;font-weight:600">Payment</td>
+        <td style="padding:10px 16px">{_escape(pm_display)}</td>
       </tr>
     </table>
 

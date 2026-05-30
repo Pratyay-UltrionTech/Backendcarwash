@@ -31,7 +31,7 @@ from app.models.mobile import (
 from app.models.promotion import DayTimePriceRule, Promotion
 from app.models.staff import BranchManager, Washer
 from app.services import otp_service
-from app.services.email_service import send_otp_email
+from app.services.email_service import send_otp_email, send_admin_invite_otp_email
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/settings", tags=["admin-settings"])
@@ -227,7 +227,7 @@ def add_admin_request_otp(body: AddAdminRequestOtpBody, current_admin: AdminUser
     otp = otp_service.store_otp("admin_invite", body.email.lower(), body.email)
     # Also stash the hashed password under a separate scope keyed the same way
     _pending_passwords[body.email.lower()] = hash_password(body.password)
-    send_otp_email(body.email, "New Admin", otp)
+    send_admin_invite_otp_email(body.email, otp)
 
 
 # In-memory temp store for pending invite password hashes (cleared on confirm/expiry)

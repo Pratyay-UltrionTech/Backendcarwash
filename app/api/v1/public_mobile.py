@@ -450,6 +450,7 @@ def create_mobile_booking(
         vehicle_model=body.vehicle_model,
         registration_number=body.registration_number or "",
         promo_code=body.promo_code.strip().upper() if body.promo_code and body.promo_code.strip() else None,
+        payment_method=body.payment_method or "later",
     )
     db.add(row)
     db.flush()
@@ -505,6 +506,7 @@ def create_mobile_booking(
             phone=row.phone or None,
             end_time=row.end_time or None,
             channel="mobile",
+            payment_method=getattr(row, "payment_method", None),
         )
     elif (getattr(row, "customer_email", None) or "").strip():
         send_booking_confirmed_email(
@@ -518,6 +520,7 @@ def create_mobile_booking(
             phone=row.phone or None,
             end_time=row.end_time or None,
             channel="mobile",
+            payment_method=getattr(row, "payment_method", None),
         )
     send_staff_booking_notification(
         db,
@@ -535,6 +538,7 @@ def create_mobile_booking(
         end_time=row.end_time,
         city_pin_code=str(row.city_pin_code),
         customer_id=str(row.customer_id) if row.customer_id else None,
+        payment_method=getattr(row, "payment_method", None),
     )
     out = _booking_to_dict(row)
     out["requested_service_pin"] = pin

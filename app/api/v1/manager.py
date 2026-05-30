@@ -137,6 +137,7 @@ def create_walk_in(db: DbSession, manager: ManagerUser, body: BookingCreate, req
             assigned_washer_id=body.assigned_washer_id,
             booking_id=body.booking_id,
             customer_id=body.customer_id,
+            payment_method=body.payment_method,
         )
         db.commit()
         audit_log(
@@ -181,6 +182,7 @@ def create_walk_in(db: DbSession, manager: ManagerUser, body: BookingCreate, req
             phone=job.phone or None,
             end_time=job.end_time or None,
             channel="branch",
+            payment_method=getattr(job, "payment_method", None),
         )
     send_staff_booking_notification(
         db,
@@ -198,6 +200,7 @@ def create_walk_in(db: DbSession, manager: ManagerUser, body: BookingCreate, req
         end_time=job.end_time,
         branch_id=str(job.branch_id),
         customer_id=str(job.customer_id) if job.customer_id else None,
+        payment_method=getattr(job, "payment_method", None),
     )
     return booking_to_dict(job)
 
@@ -305,6 +308,7 @@ def patch_booking(
                 old_slot_date=old_slot[0],
                 old_start_time=old_slot[1],
                 customer_id=str(job.customer_id) if job.customer_id else None,
+                payment_method=getattr(job, "payment_method", None),
             )
         except Exception:
             import logging

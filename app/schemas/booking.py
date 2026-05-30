@@ -30,6 +30,7 @@ class BookingCreate(BaseModel):
     customer_id: str | None = None
     loyalty_reward_id: str | None = None
     promo_code: str | None = None
+    payment_method: str = "later"
 
     @field_validator("customer_name", "phone", "vehicle_type", "service_summary", "slot_date", "start_time")
     @classmethod

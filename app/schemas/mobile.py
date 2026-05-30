@@ -203,6 +203,7 @@ class MobileBookingCreate(BaseModel):
     customer_id: str | None = None
     loyalty_reward_id: str | None = None
     promo_code: str | None = None
+    payment_method: str = "later"
 
 
 class MobileBookingUpdate(BaseModel):

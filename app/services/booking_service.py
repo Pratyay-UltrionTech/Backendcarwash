@@ -110,6 +110,7 @@ def create_booking(
     booking_id: str | None = None,
     customer_id: str | None = None,
     promo_code: str | None = None,
+    payment_method: str = "later",
 ) -> BranchBooking:
     # Validate that the slot is in the future
     now = datetime.now()
@@ -177,6 +178,7 @@ def create_booking(
         notes=notes,
         tip_cents=tip,
         promo_code=promo_code.strip().upper() if promo_code and promo_code.strip() else None,
+        payment_method=payment_method or "later",
     )
     db.add(job)
     db.flush()
